@@ -57,7 +57,7 @@ For a self-managed Ubuntu server, upload or clone the project to `/var/www/unive
 
 ```bash
 cd /var/www/university-marketplace
-WEB_PORT=8080 API_PORT=4000 JWT_SECRET="replace-with-secret" bash deploy/server-setup.sh
+DOMAIN_OR_IP=adelina.adilkan.com WEB_PORT=80 API_PORT=4000 JWT_SECRET="replace-with-secret" bash deploy/server-setup.sh
 ```
 
-The default deployment URL is `http://SERVER_IP:8080`. Change `WEB_PORT` if that port is already used.
+The default deployment URL is `http://adelina.adilkan.com`. Change `WEB_PORT` if port `80` is already used.

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/var/www/university-marketplace}"
-DOMAIN_OR_IP="${DOMAIN_OR_IP:-your-server-ip}"
-WEB_PORT="${WEB_PORT:-8080}"
+DOMAIN_OR_IP="${DOMAIN_OR_IP:-adelina.adilkan.com}"
+WEB_PORT="${WEB_PORT:-80}"
 API_PORT="${API_PORT:-4000}"
 DB_NAME="${DB_NAME:-university_marketplace}"
 DB_USER="${DB_USER:-marketplace}"
