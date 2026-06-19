@@ -28,6 +28,11 @@ Frontend: `http://localhost:5173`
 
 Backend: `http://localhost:4000`
 
+Swagger API docs:
+
+- UI: `http://localhost:4000/api/docs`
+- OpenAPI JSON: `http://localhost:4000/api/docs.json`
+
 ## Demo defaults
 
 `ALLOWED_EMAIL_DOMAIN=gmail.com` is configured for capstone demo convenience. Replace it with the real university email domain before production use.

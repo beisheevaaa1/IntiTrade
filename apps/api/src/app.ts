@@ -11,6 +11,7 @@ import favoriteRoutes from "./routes/favorites.js";
 import conversationRoutes from "./routes/conversations.js";
 import reportRoutes from "./routes/reports.js";
 import adminRoutes from "./routes/admin.js";
+import { registerSwagger } from "./swagger.js";
 
 export function createApp() {
   const app = express();
@@ -18,6 +19,7 @@ export function createApp() {
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan("dev"));
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+  registerSwagger(app);
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.use("/api/auth", authRoutes);
