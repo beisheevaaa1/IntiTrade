@@ -11,6 +11,12 @@ DB_PASSWORD="${DB_PASSWORD:-marketplace}"
 ALLOWED_EMAIL_DOMAIN="${ALLOWED_EMAIL_DOMAIN:-gmail.com}"
 JWT_SECRET="${JWT_SECRET:-change-this-before-production}"
 
+if [ "$WEB_PORT" = "80" ]; then
+  PUBLIC_WEB_URL="http://${DOMAIN_OR_IP}"
+else
+  PUBLIC_WEB_URL="http://${DOMAIN_OR_IP}:${WEB_PORT}"
+fi
+
 if [ ! -d "$APP_DIR" ]; then
   echo "APP_DIR does not exist: $APP_DIR"
   echo "Upload or clone the project to this path first."
@@ -18,7 +24,7 @@ if [ ! -d "$APP_DIR" ]; then
 fi
 
 apt-get update
-apt-get install -y curl nginx postgresql postgresql-contrib
+apt-get install -y curl git nginx postgresql postgresql-contrib
 
 if ! command -v node >/dev/null 2>&1 || ! node -v | grep -qE '^v2[0-9]\.'; then
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -32,21 +38,25 @@ DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${DB_USER}') THEN
     CREATE ROLE ${DB_USER} LOGIN PASSWORD '${DB_PASSWORD}';
+  ELSE
+    ALTER ROLE ${DB_USER} WITH PASSWORD '${DB_PASSWORD}';
   END IF;
 END
 \$\$;
-SELECT 'CREATE DATABASE ${DB_NAME} OWNER ${DB_USER}'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\\gexec
-GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
 SQL
+
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1; then
+  sudo -u postgres createdb -O "${DB_USER}" "${DB_NAME}"
+fi
+sudo -u postgres psql -d "${DB_NAME}" -c "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};"
 
 cat > "${APP_DIR}/apps/api/.env" <<ENV
 DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@localhost:5432/${DB_NAME}?schema=public"
 JWT_SECRET="${JWT_SECRET}"
 JWT_EXPIRES_IN="7d"
 ALLOWED_EMAIL_DOMAIN="${ALLOWED_EMAIL_DOMAIN}"
-CLIENT_URL="http://${DOMAIN_OR_IP}:${WEB_PORT}"
-API_URL="http://${DOMAIN_OR_IP}:${API_PORT}"
+CLIENT_URL="${PUBLIC_WEB_URL}"
+API_URL="${PUBLIC_WEB_URL}"
 PORT="${API_PORT}"
 SMTP_HOST="localhost"
 SMTP_PORT="1025"
@@ -58,7 +68,7 @@ ENV
 cd "$APP_DIR"
 npm install
 npm run prisma:generate
-npm run prisma:migrate --workspace apps/api -- --name init
+npm run prisma:deploy --workspace apps/api
 npm run seed
 npm run build
 
@@ -105,4 +115,4 @@ ln -sfn /etc/nginx/sites-available/university-marketplace /etc/nginx/sites-enabl
 nginx -t
 systemctl reload nginx
 
-echo "Deployment ready: http://${DOMAIN_OR_IP}:${WEB_PORT}"
+echo "Deployment ready: ${PUBLIC_WEB_URL}"
