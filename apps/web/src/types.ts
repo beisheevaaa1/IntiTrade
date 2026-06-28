@@ -11,6 +11,10 @@ export type User = {
   role: Role;
   isVerified: boolean;
   isBlocked: boolean;
+  faculty?: string | null;
+  campusArea?: string | null;
+  bio?: string | null;
+  avatarUrl?: string | null;
 };
 
 export type Category = {
@@ -33,10 +37,14 @@ export type Listing = {
   condition: ListingCondition;
   status: ListingStatus;
   location: string;
+  rejectionReason?: string | null;
+  viewsCount?: number;
+  isNegotiable?: boolean;
+  meetupPreference?: string | null;
   sellerId: string;
   categoryId: string;
   createdAt: string;
-  seller: Pick<User, "id" | "name" | "email">;
+  seller: Pick<User, "id" | "name" | "email" | "faculty" | "campusArea" | "avatarUrl">;
   category: Category;
   images: ListingImage[];
   _count?: { favorites: number; reports: number };

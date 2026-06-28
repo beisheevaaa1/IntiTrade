@@ -28,12 +28,22 @@ export function ListingCard({ listing, onFavorite }: { listing: Listing; onFavor
             {listing.title}
           </Link>
         </div>
-        <div className="rounded-md bg-white px-2 py-1 text-sm font-semibold">${Number(listing.price).toFixed(2)}</div>
+        <div className="text-right">
+          <div className="rounded-md bg-campus/10 px-2.5 py-1 text-sm font-bold text-campus">RM {Number(listing.price).toFixed(2)}</div>
+          {listing.isNegotiable && <span className="text-[10px] font-medium text-ink/50 block mt-0.5">Negotiable</span>}
+        </div>
       </div>
       <p className="mt-2 line-clamp-2 min-h-[40px] text-sm text-ink/65">{listing.description}</p>
-      <div className="mt-3 flex items-center gap-2 rounded-md bg-white px-2.5 py-2 text-xs font-medium text-campus">
-        <BadgeCheck size={15} />
-        Verified student seller
+      <div className="mt-3 flex items-center justify-between rounded-md bg-white px-2.5 py-2 text-xs font-medium text-campus border border-line/40">
+        <span className="flex items-center gap-1.5 truncate">
+          <BadgeCheck size={15} className="flex-shrink-0" />
+          <span className="truncate">{listing.seller?.name || "Verified Student"}</span>
+        </span>
+        {listing.condition && listing.condition !== "NOT_APPLICABLE" && (
+          <span className="rounded bg-paper px-1.5 py-0.5 text-[10px] font-bold uppercase text-ink/70">
+            {listing.condition.replace("_", " ")}
+          </span>
+        )}
       </div>
       <div className="mt-4 flex items-center justify-between text-sm text-ink/60">
         <span className="flex items-center gap-1"><MapPin size={15} /> {listing.location}</span>

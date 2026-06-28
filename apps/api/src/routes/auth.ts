@@ -94,6 +94,26 @@ router.get("/me", requireAuth, async (req, res) => {
   res.json({ user: sanitizeUser(user) });
 });
 
+const updateProfileSchema = z.object({
+  name: z.string().min(2).max(80).optional(),
+  faculty: z.string().max(120).nullable().optional(),
+  campusArea: z.string().max(120).nullable().optional(),
+  bio: z.string().max(500).nullable().optional(),
+  avatarUrl: z.string().nullable().optional()
+});
+
+router.patch("/profile", requireAuth, async (req, res) => {
+  const parsed = updateProfileSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "Invalid profile data", errors: parsed.error.flatten() });
+
+  const updated = await prisma.user.update({
+    where: { id: req.user!.id },
+    data: parsed.data
+  });
+
+  res.json({ user: sanitizeUser(updated) });
+});
+
 router.post("/logout", (_req, res) => {
   res.status(204).send();
 });

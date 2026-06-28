@@ -7,7 +7,7 @@ import { prisma } from "../prisma.js";
 const router = Router();
 
 const listingInclude = {
-  seller: { select: { id: true, name: true, email: true } },
+  seller: { select: { id: true, name: true, email: true, faculty: true, campusArea: true, avatarUrl: true } },
   category: true,
   images: true,
   _count: { select: { favorites: true, reports: true } }
@@ -22,35 +22,50 @@ router.get("/", async (req, res) => {
   const q = typeof req.query.q === "string" ? req.query.q : undefined;
   const category = typeof req.query.category === "string" ? req.query.category : undefined;
   const type = typeof req.query.type === "string" && req.query.type in ListingType ? (req.query.type as ListingType) : undefined;
+  const condition = typeof req.query.condition === "string" && req.query.condition in ListingCondition ? (req.query.condition as ListingCondition) : undefined;
   const minPrice = typeof req.query.minPrice === "string" ? Number(req.query.minPrice) : undefined;
   const maxPrice = typeof req.query.maxPrice === "string" ? Number(req.query.maxPrice) : undefined;
   const sort = typeof req.query.sort === "string" ? req.query.sort : "newest";
   const status = req.user?.role === Role.ADMIN && typeof req.query.status === "string" && req.query.status in ListingStatus
     ? (req.query.status as ListingStatus)
+    : typeof req.query.status === "string" && req.query.status in ListingStatus && req.query.status === "ACTIVE"
+    ? ListingStatus.ACTIVE
     : ListingStatus.ACTIVE;
 
-  const listings = await prisma.listing.findMany({
-    where: {
-      status,
-      type,
-      category: category ? { slug: category } : undefined,
-      price: {
-        gte: Number.isFinite(minPrice) ? minPrice : undefined,
-        lte: Number.isFinite(maxPrice) ? maxPrice : undefined
-      },
-      OR: q
-        ? [
-            { title: { contains: q, mode: "insensitive" } },
-            { description: { contains: q, mode: "insensitive" } },
-            { location: { contains: q, mode: "insensitive" } }
-          ]
-        : undefined
-    },
-    include: listingInclude,
-    orderBy: sort === "price_asc" ? { price: "asc" } : sort === "price_desc" ? { price: "desc" } : { createdAt: "desc" }
-  });
+  const page = typeof req.query.page === "string" ? Math.max(1, parseInt(req.query.page, 10) || 1) : 1;
+  const limit = typeof req.query.limit === "string" ? Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20)) : 20;
+  const skip = (page - 1) * limit;
 
-  res.json({ listings });
+  const where = {
+    status,
+    type,
+    condition,
+    category: category ? { slug: category } : undefined,
+    price: {
+      gte: Number.isFinite(minPrice) ? minPrice : undefined,
+      lte: Number.isFinite(maxPrice) ? maxPrice : undefined
+    },
+    OR: q
+      ? [
+          { title: { contains: q, mode: "insensitive" as const } },
+          { description: { contains: q, mode: "insensitive" as const } },
+          { location: { contains: q, mode: "insensitive" as const } }
+        ]
+      : undefined
+  };
+
+  const [listings, total] = await Promise.all([
+    prisma.listing.findMany({
+      where,
+      include: listingInclude,
+      orderBy: sort === "price_asc" ? { price: "asc" } : sort === "price_desc" ? { price: "desc" } : { createdAt: "desc" },
+      skip,
+      take: limit
+    }),
+    prisma.listing.count({ where })
+  ]);
+
+  res.json({ listings, pagination: { total, page, limit, totalPages: Math.ceil(total / limit) } });
 });
 
 router.get("/mine", requireAuth, async (req, res) => {
@@ -65,6 +80,10 @@ router.get("/mine", requireAuth, async (req, res) => {
 router.get("/:id", async (req, res) => {
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id }, include: listingInclude });
   if (!listing) return res.status(404).json({ message: "Listing not found" });
+  
+  // Increment views counter asynchronously
+  prisma.listing.update({ where: { id: listing.id }, data: { viewsCount: { increment: 1 } } }).catch(() => {});
+
   res.json({ listing });
 });
 
@@ -72,9 +91,11 @@ const createListingSchema = z.object({
   title: z.string().min(4).max(120),
   description: z.string().min(10).max(2000),
   price: z.coerce.number().min(0),
+  isNegotiable: z.boolean().optional().default(false),
   type: z.nativeEnum(ListingType),
   condition: z.nativeEnum(ListingCondition).optional(),
   location: z.string().min(2).max(120),
+  meetupPreference: z.string().optional(),
   categoryId: z.string().uuid(),
   imageUrls: z.array(z.string()).default([])
 });
@@ -87,6 +108,8 @@ router.post("/", requireAuth, async (req, res) => {
     data: {
       ...parsed.data,
       price: parsed.data.price,
+      isNegotiable: parsed.data.isNegotiable,
+      meetupPreference: parsed.data.meetupPreference,
       condition: parsed.data.type === ListingType.SERVICE ? ListingCondition.NOT_APPLICABLE : parsed.data.condition ?? ListingCondition.GOOD,
       sellerId: req.user!.id,
       images: { create: parsed.data.imageUrls.map((url) => ({ url })) }

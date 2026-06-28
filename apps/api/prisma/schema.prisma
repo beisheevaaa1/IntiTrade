@@ -48,6 +48,10 @@ model User {
   role                Role                     @default(STUDENT)
   isVerified          Boolean                  @default(false)
   isBlocked           Boolean                  @default(false)
+  faculty             String?
+  campusArea          String?
+  bio                 String?
+  avatarUrl           String?
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
   listings            Listing[]                @relation("SellerListings")
@@ -57,6 +61,8 @@ model User {
   sentMessages        Message[]                @relation("SentMessages")
   reports             Report[]                 @relation("ReporterReports")
   verificationTokens  EmailVerificationToken[]
+  adminLogs           AdminActionLog[]         @relation("AdminActions")
+  notifications       Notification[]
 }
 
 model EmailVerificationToken {
@@ -83,12 +89,16 @@ model Listing {
   price         Decimal          @db.Decimal(10, 2)
   type          ListingType
   condition     ListingCondition @default(NOT_APPLICABLE)
-  status        ListingStatus    @default(PENDING)
-  location      String
-  sellerId      String
-  categoryId    String
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  status           ListingStatus    @default(PENDING)
+  location         String
+  rejectionReason  String?
+  viewsCount       Int              @default(0)
+  isNegotiable     Boolean          @default(false)
+  meetupPreference String?
+  sellerId         String
+  categoryId       String
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   seller        User             @relation("SellerListings", fields: [sellerId], references: [id], onDelete: Cascade)
   category      Category         @relation(fields: [categoryId], references: [id])
   images        ListingImage[]
@@ -141,6 +151,7 @@ model Message {
   conversationId String
   senderId       String
   body           String
+  readAt         DateTime?
   createdAt      DateTime     @default(now())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender         User         @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
@@ -157,4 +168,30 @@ model Report {
   updatedAt   DateTime     @updatedAt
   reporter    User         @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
   listing     Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+}
+
+model AdminActionLog {
+  id         String   @id @default(uuid())
+  adminId    String
+  action     String
+  entityType String
+  entityId   String
+  reason     String?
+  createdAt  DateTime @default(now())
+  admin      User     @relation("AdminActions", fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([entityType, entityId])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  type      String
+  payload   String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
