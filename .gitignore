@@ -1,12 +1,17 @@
-node_modules/
-dist/
-*.tsbuildinfo
-.env
-.env.*
-!.env.example
-uploads/
-coverage/
-*.log
-.DS_Store
-apps/web/vite.config.js
-apps/web/vite.config.d.ts
+# Временные папки/архивы в корне
+archive/
+archive_old_monorepo/
+design_new/
+IntiTrade (1).zip
+
+# Зависимости и сборка в подпроектах
+**/node_modules/
+**/dist/
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+**/coverage/
+**/*.log
+**/.DS_Store
+**/.vite/
