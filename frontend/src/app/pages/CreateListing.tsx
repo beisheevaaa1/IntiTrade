@@ -28,7 +28,7 @@ const locationsList = [
   "Dormitory Block A",
   "Dormitory Block B",
   "Faculty Office Building",
-  "Other"
+  "Online"
 ];
 
 export function CreateListing() {
@@ -706,7 +706,14 @@ export function CreateListing() {
                   <Label>Other preferred location</Label>
                   <RadioGroup 
                     value={meetupPreference}
-                    onValueChange={(val) => setMeetupPreference(val)}
+                    onValueChange={(val) => {
+                      setMeetupPreference(val);
+                      if (val === "Online") {
+                        setLocation("Online");
+                      } else if (location === "Online") {
+                        setLocation("");
+                      }
+                    }}
                     className="grid grid-cols-1 sm:grid-cols-2 gap-3"
                   >
                     {locationsList.map((loc) => {
@@ -721,10 +728,14 @@ export function CreateListing() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="location">Specific Spot Details (e.g. Block B Table 4)</Label>
+                  <Label htmlFor="location">
+                    {meetupPreference === "Online" 
+                      ? "Online meeting platform or contact method (e.g. MS Teams, Zoom, WhatsApp) *" 
+                      : "Specific Spot Details (e.g. Block B Table 4) *"}
+                  </Label>
                   <Input 
                     id="location" 
-                    placeholder="Cafeteria seating area near the drinks counter" 
+                    placeholder={meetupPreference === "Online" ? "e.g., Zoom, MS Teams, or via chat" : "Cafeteria seating area near the drinks counter"} 
                     required 
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}

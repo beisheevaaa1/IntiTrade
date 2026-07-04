@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { renderMarkdown } from "../../utils/renderMarkdown";
 import { useParams, Link, useNavigate } from "react-router";
 import { Heart, MessageCircle, Share2, MapPin, ShieldCheck, Flag, Clock, User, Star, Loader2, ShieldAlert } from "lucide-react";
@@ -30,15 +30,27 @@ export function ProductDetail() {
     api.get(`/listings/${id}`)
       .then((res) => {
         setProduct(res.data.listing);
-        // If user is logged in, we check if this listing is in their favorites
-        // In the simplified backend favorites table is checked via favorites route
       })
       .catch((err) => {
         console.error(err);
         setError("Listing not found or has been deleted.");
       })
       .finally(() => setLoading(false));
-  }, [id]);
+
+    if (user) {
+      api.get("/favorites")
+        .then((res) => {
+          const list = res.data.favorites || [];
+          setIsFavorited(list.some((fav: any) => fav.listingId === id));
+        })
+        .catch((err) => console.error("Error fetching favorites:", err));
+    }
+  }, [id, user]);
+
+  const handleShare = () => {
+    navigator.clipboard.writeText(window.location.href);
+    alert("Listing link copied to clipboard!");
+  };
 
   const handleFavoriteToggle = async () => {
     if (!user) {
@@ -91,6 +103,16 @@ export function ProductDetail() {
     try {
       await api.post("/transactions", { listingId: product.id, quantity, meetupPointId: product.meetupPointId || null });
       setReserved(true);
+      if (window.confirm("Item reserved successfully! Would you like to chat with the seller now to arrange the handoff?")) {
+        try {
+          const res = await api.post("/conversations", { listingId: product.id });
+          const conversationId = res.data.conversation.id;
+          navigate(`/inbox?conversationId=${conversationId}`);
+        } catch (err) {
+          console.error("Error starting conversation after reservation:", err);
+          alert("Item reserved. You can message the seller from their profile or the listing details.");
+        }
+      }
     } catch (err: any) {
       alert(err.response?.data?.message || "Could not create the reservation.");
     } finally {
@@ -241,7 +263,7 @@ export function ProductDetail() {
               <div className="flex justify-between items-start mb-4">
                 <Badge className="bg-primary text-white">ACTIVE</Badge>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full hover:bg-gray-100 text-gray-500">
+                  <Button variant="ghost" size="icon" onClick={handleShare} className="h-10 w-10 rounded-full hover:bg-gray-100 text-gray-500" title="Copy listing link">
                     <Share2 className="h-5 w-5" />
                   </Button>
                   <Button 

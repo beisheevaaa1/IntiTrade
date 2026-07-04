@@ -55,10 +55,10 @@ export function BrowseListings() {
 
   // Sync with URL params
   useEffect(() => {
-    const search = searchParams.get("search");
-    const category = searchParams.get("category");
-    if (search !== null) setSearchQuery(search);
-    if (category !== null) setSelectedCategory(category);
+    const search = searchParams.get("search") ?? "";
+    const category = searchParams.get("category") ?? "";
+    setSearchQuery(search);
+    setSelectedCategory(category);
   }, [searchParams]);
 
   // Fetch Listings with filters
@@ -70,8 +70,11 @@ export function BrowseListings() {
       status: "ACTIVE",
     };
 
-    if (searchQuery.trim()) params.search = searchQuery.trim();
-    if (selectedCategory) params.category = selectedCategory;
+    const searchVal = searchParams.get("search") || "";
+    const categoryVal = searchParams.get("category") || "";
+
+    if (searchVal.trim()) params.search = searchVal.trim();
+    if (categoryVal) params.category = categoryVal;
     if (minPrice) params.minPrice = parseFloat(minPrice);
     if (maxPrice) params.maxPrice = parseFloat(maxPrice);
     if (selectedConditions.length > 0) params.condition = selectedConditions.join(",");
@@ -110,13 +113,11 @@ export function BrowseListings() {
   useEffect(() => {
     setPage(1);
     fetchListings(1, false);
-  }, [selectedCategory, selectedConditions, listingType, sellerType, minRating, sortBy]);
+  }, [searchParams, selectedConditions, listingType, sellerType, minRating, sortBy]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSearchParams({ search: searchQuery, category: selectedCategory });
-    setPage(1);
-    fetchListings(1, false);
   };
 
   const loadMore = () => {
@@ -195,7 +196,11 @@ export function BrowseListings() {
                       type="radio" 
                       name="category"
                       checked={selectedCategory === ""}
-                      onChange={() => setSelectedCategory("")}
+                      onChange={() => {
+                        const newParams = new URLSearchParams(searchParams);
+                        newParams.delete("category");
+                        setSearchParams(newParams);
+                      }}
                       className="text-primary focus:ring-primary border-gray-300"
                     />
                     <span className={`text-sm ${selectedCategory === "" ? 'font-medium text-primary' : 'text-gray-600'}`}>All Categories</span>
@@ -208,7 +213,11 @@ export function BrowseListings() {
                         type="radio" 
                         name="category"
                         checked={selectedCategory === cat.slug}
-                        onChange={() => setSelectedCategory(cat.slug)}
+                        onChange={() => {
+                          const newParams = new URLSearchParams(searchParams);
+                          newParams.set("category", cat.slug);
+                          setSearchParams(newParams);
+                        }}
                         className="text-primary focus:ring-primary border-gray-300"
                       />
                       <span className={`text-sm ${selectedCategory === cat.slug ? 'font-medium text-primary' : 'text-gray-600'}`}>{cat.name}</span>
@@ -221,7 +230,7 @@ export function BrowseListings() {
             <div className="mb-8 space-y-3">
               <h3 className="font-semibold text-foreground">Listing type</h3>
               <select value={listingType} onChange={(e) => setListingType(e.target.value)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
-                <option value="">Products, services & courses</option>
+                <option value="">All</option>
                 <option value="PRODUCT">Products</option>
                 <option value="SERVICE">Services</option>
                 <option value="COURSE">Courses</option>

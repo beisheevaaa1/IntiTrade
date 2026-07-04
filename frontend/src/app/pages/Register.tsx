@@ -53,7 +53,7 @@ export function Register() {
             We've sent a verification code to your email address to verify your account.
           </p>
           {verificationToken && (
-            <div className="mt-4 p-3 bg-yellow-50 text-yellow-800 rounded-xl font-mono text-sm border border-yellow-200">
+            <div className="mt-4 p-3 bg-yellow-50 text-yellow-800 rounded-xl font-mono text-sm border border-yellow-200 break-all select-all">
               Demo Code: <span className="font-bold">{verificationToken}</span>
             </div>
           )}

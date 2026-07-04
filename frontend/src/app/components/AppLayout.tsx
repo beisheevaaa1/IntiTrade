@@ -72,16 +72,11 @@ export function AppLayout() {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-white shadow-sm">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between gap-3 lg:gap-6">
-          <Link to="/" className="flex items-center gap-2">
-            <img 
-              src="/assets/logo.png" 
-              alt="INTI Logo" 
-              className="w-10 h-10 object-contain lg:hidden rounded-xl" 
-            />
+          <Link to="/" className="flex items-center gap-2 shrink-0">
             <img 
               src="/assets/INTI-40.png" 
               alt="INTI Logo" 
-              className="hidden lg:block h-10 lg:h-12 w-auto object-contain" 
+              className="h-8 sm:h-10 lg:h-12 w-auto object-contain" 
             />
           </Link>
 

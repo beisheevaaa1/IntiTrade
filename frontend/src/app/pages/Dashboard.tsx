@@ -33,6 +33,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [conversationsCount, setConversationsCount] = useState(0);
   const [transactions, setTransactions] = useState<import("../../types").Transaction[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [privacy, setPrivacy] = useState({ showEmail: user?.showEmail ?? false, showCampusArea: user?.showCampusArea ?? true, allowMessages: user?.allowMessages ?? true, showOnlineStatus: user?.showOnlineStatus ?? true });
   const [activeTab, setActiveTab] = useState<"overview" | "listings" | "transactions" | "archived" | "privacy">("overview");
 
@@ -48,10 +49,25 @@ export function Dashboard() {
       setConversationsCount(convsRes.data.conversations?.length || 0);
       const transactionsRes = await api.get("/transactions");
       setTransactions(transactionsRes.data.transactions || []);
+
+      // Fetch blocked users
+      const blocksRes = await api.get("/community/blocks");
+      setBlockedUsers(blocksRes.data.blocks || []);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUnblockUser = async (userId: string) => {
+    try {
+      await api.delete(`/community/blocks/${userId}`);
+      setBlockedUsers((current) => current.filter((block) => block.blockedId !== userId));
+      alert("User unblocked successfully.");
+    } catch (err) {
+      console.error("Error unblocking user:", err);
+      alert("Failed to unblock user.");
     }
   };
 
@@ -125,9 +141,10 @@ export function Dashboard() {
                 {user?.name.substring(0, 2).toUpperCase() || "US"}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <h3 className="font-bold text-sm text-foreground">{user?.name}</h3>
-              <p className="text-xs text-muted-foreground">{user?.faculty || "Student"}</p>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-bold text-sm text-foreground truncate" title={user?.name}>{user?.name}</h3>
+              <p className="text-xs text-muted-foreground truncate">{user?.faculty || "Student"}</p>
+              <p className="text-[11px] text-gray-500 truncate mt-0.5" title={user?.email}>{user?.email}</p>
             </div>
           </div>
         </div>
@@ -404,10 +421,48 @@ export function Dashboard() {
                   />
                 </label>
               ))}
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end pt-2 border-b border-border pb-6 mb-6">
                 <Button onClick={savePrivacy} className="font-semibold shadow-sm h-11 px-6 rounded-xl">
                   Save privacy settings
                 </Button>
+              </div>
+
+              {/* Blocked Users Section */}
+              <div className="pt-2">
+                <h4 className="font-bold text-base text-foreground mb-4 flex items-center gap-2">
+                  <span>🚫</span> Blocked Users
+                </h4>
+                {blockedUsers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground bg-gray-50 border border-dashed p-6 rounded-xl text-center">
+                    You haven't blocked any users yet.
+                  </p>
+                ) : (
+                  <div className="space-y-2.5 max-h-60 overflow-y-auto pr-1">
+                    {blockedUsers.map((block) => (
+                      <div key={block.blockedId} className="flex items-center justify-between border rounded-xl p-3 bg-white hover:bg-gray-50/50 transition-colors">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Avatar className="h-8 w-8 border border-border">
+                            <AvatarImage src={mediaUrl(block.blocked?.avatarUrl || undefined)} />
+                            <AvatarFallback className="text-[10px] bg-red-50 text-primary font-bold">
+                              {block.blocked?.name?.substring(0, 2).toUpperCase() || "US"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm font-semibold text-gray-800 truncate" title={block.blocked?.name}>
+                            {block.blocked?.name}
+                          </span>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          onClick={() => handleUnblockUser(block.blockedId)}
+                          className="h-8 text-xs font-semibold text-primary hover:bg-red-50 border-primary/30 hover:border-primary transition-colors shrink-0"
+                        >
+                          Unblock
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
