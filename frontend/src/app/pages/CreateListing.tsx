@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { renderMarkdown } from "../../utils/renderMarkdown";
 import { ArrowLeft, Upload, X, Image as ImageIcon, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -65,6 +66,8 @@ export function CreateListing() {
   const [error, setError] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
   const [hideTipLocal, setHideTipLocal] = useState(false);
+  const [descriptionFormat, setDescriptionFormat] = useState<"plain" | "markdown">("plain");
+  const [showPreview, setShowPreview] = useState(false);
 
   const handleEnableAcademicTip = async () => {
     try {
@@ -569,16 +572,75 @@ export function CreateListing() {
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <Label htmlFor="description">Description *</Label>
-                  <Textarea 
-                    id="description" 
-                    placeholder="Describe your item or service details, meet-up times, features, etc." 
-                    className="min-h-[120px]"
-                    required
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="description">Description *</Label>
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => { setDescriptionFormat("plain"); setShowPreview(false); }}
+                        className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                          descriptionFormat === "plain"
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Plain Text
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDescriptionFormat("markdown")}
+                        className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                          descriptionFormat === "markdown"
+                            ? "bg-white text-gray-900 shadow-sm"
+                            : "text-gray-500 hover:text-gray-700"
+                        }`}
+                      >
+                        Markdown
+                      </button>
+                    </div>
+                  </div>
+
+                  {descriptionFormat === "markdown" && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        Use <code className="bg-gray-100 px-1 rounded text-[10px] font-mono">**bold**</code>, <code className="bg-gray-100 px-1 rounded text-[10px] font-mono">*italic*</code>, <code className="bg-gray-100 px-1 rounded text-[10px] font-mono"># Heading</code>, <code className="bg-gray-100 px-1 rounded text-[10px] font-mono">- list</code>, <code className="bg-gray-100 px-1 rounded text-[10px] font-mono">```code```</code>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowPreview(!showPreview)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                          showPreview
+                            ? "bg-primary text-white border-primary shadow-sm"
+                            : "bg-white text-primary border-primary/30 hover:border-primary hover:bg-red-50"
+                        }`}
+                      >
+                        {showPreview ? "✎ Edit" : "👁 Preview"}
+                      </button>
+                    </div>
+                  )}
+
+                  {showPreview && descriptionFormat === "markdown" ? (
+                    <div className="min-h-[120px] bg-white border border-border rounded-xl p-4 prose max-w-none">
+                      {description.trim() ? (
+                        renderMarkdown(description)
+                      ) : (
+                        <p className="text-muted-foreground text-sm italic">Nothing to preview yet. Write some markdown above to see it rendered here.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <Textarea 
+                      id="description" 
+                      placeholder={descriptionFormat === "markdown"
+                        ? "# My Item\n\nDescribe your item using **Markdown** formatting.\n\n- Feature one\n- Feature two\n\n```\nCode example\n```"
+                        : "Describe your item or service details, meet-up times, features, etc."
+                      }
+                      className={`min-h-[120px] font-mono ${descriptionFormat === "markdown" ? "text-sm" : ""}`}
+                      required
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                    />
+                  )}
                 </div>
 
               </CardContent>
