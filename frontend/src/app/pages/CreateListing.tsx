@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, Upload, X, Image as ImageIcon, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -32,6 +32,7 @@ const locationsList = [
 
 export function CreateListing() {
   const navigate = useNavigate();
+  const { id } = useParams();
   const { user, reloadUser, updateUser } = useAuth();
   
   // Form states
@@ -100,16 +101,47 @@ export function CreateListing() {
     api.get("/listings/categories")
       .then((res) => {
         setCategories(res.data.categories);
-        if (res.data.categories.length > 0) {
+        if (res.data.categories.length > 0 && !id) {
           setSelectedCategoryId(res.data.categories[0].id);
         }
       })
       .catch((err) => console.error("Error fetching categories:", err));
     api.get("/community/meetup-points").then((res) => {
       setMeetupPoints(res.data.meetupPoints);
-      setMeetupPointId(res.data.meetupPoints[0]?.id ?? "");
+      if (res.data.meetupPoints.length > 0 && !id) {
+        setMeetupPointId(res.data.meetupPoints[0].id);
+      }
     }).catch(() => undefined);
-  }, [navigate]);
+
+    if (id) {
+      api.get(`/listings/${id}`)
+        .then((res) => {
+          const l = res.data.listing;
+          setTitle(l.title);
+          setDescription(l.description);
+          setPrice(String(l.price));
+          setType(l.type);
+          setCondition(l.condition);
+          setLocation(l.location);
+          setMeetupPreference(l.meetupPreference || "");
+          setMeetupPointId(l.meetupPointId || "");
+          setQuantity(String(l.quantity || 1));
+          setIsbn(l.isbn || "");
+          setAuthor(l.author || "");
+          setEdition(l.edition || "");
+          setCourseCode(l.courseCode || "");
+          setServiceDuration(String(l.serviceDuration || 60));
+          setPricingUnit(l.pricingUnit || "ITEM");
+          setAvailabilityNote(l.availabilityNote || "");
+          setSelectedCategoryId(l.categoryId);
+          setImages(l.images.map((img: any) => img.url));
+        })
+        .catch((err) => {
+          console.error("Error loading listing for edit:", err);
+          setError("Failed to load listing details.");
+        });
+    }
+  }, [navigate, id]);
 
   const convertPngToJpg = (file: File): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -238,7 +270,8 @@ export function CreateListing() {
 
     try {
       if (sellerType !== user?.sellerType) await api.patch("/auth/profile", { sellerType });
-      await api.post("/listings", {
+      
+      const payload = {
         title,
         description,
         price: parseFloat(price),
@@ -258,7 +291,13 @@ export function CreateListing() {
         availabilityNote: type !== "PRODUCT" ? availabilityNote || undefined : undefined,
         categoryId: selectedCategoryId,
         imageUrls: images
-      });
+      };
+
+      if (id) {
+        await api.patch(`/listings/${id}`, payload);
+      } else {
+        await api.post("/listings", payload);
+      }
 
       setIsSuccess(true);
       setTimeout(() => {
@@ -296,11 +335,11 @@ export function CreateListing() {
             <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors p-2 -ml-2 rounded-full hover:bg-gray-100">
               <ArrowLeft className="h-5 w-5" />
             </Link>
-            <h1 className="text-xl font-bold text-foreground">Create a listing</h1>
+            <h1 className="text-xl font-bold text-foreground">{id ? "Edit listing" : "Create a listing"}</h1>
           </div>
           <div className="flex gap-3">
             <Button onClick={() => document.getElementById("submit-listing-btn")?.click()} disabled={isPublishing}>
-              {isPublishing ? "Submitting..." : "Submit for approval"}
+              {isPublishing ? "Saving..." : id ? "Save changes" : "Submit for approval"}
             </Button>
           </div>
         </div>
@@ -639,7 +678,7 @@ export function CreateListing() {
           
           <div className="sm:hidden pt-4 pb-8">
              <Button type="submit" className="w-full py-6 text-lg rounded-xl" disabled={isPublishing}>
-              {isPublishing ? "Submitting..." : "Submit for approval"}
+              {isPublishing ? "Saving..." : id ? "Save changes" : "Submit for approval"}
             </Button>
           </div>
 

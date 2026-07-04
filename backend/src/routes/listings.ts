@@ -244,7 +244,7 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing status" });
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
   if (!listing) return res.status(404).json({ message: "Listing not found" });
-  const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED];
+  const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED, ListingStatus.ACTIVE];
   const sellerAllowed = listing.sellerId === req.user!.id && sellerStatuses.includes(parsed.data.status);
   if (!sellerAllowed && req.user!.role !== Role.ADMIN) return res.status(403).json({ message: "Not allowed" });
   const updated = await prisma.listing.update({ where: { id: listing.id }, data: { status: parsed.data.status }, include: listingInclude });

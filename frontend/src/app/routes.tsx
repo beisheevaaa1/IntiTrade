@@ -43,6 +43,7 @@ export const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           { path: "create-listing", Component: CreateListing },
+          { path: "edit-listing/:id", Component: CreateListing },
           { path: "inbox", Component: Inbox },
           { path: "dashboard", Component: Dashboard },
           { path: "admin", Component: AdminPage },
