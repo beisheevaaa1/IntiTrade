@@ -71,21 +71,21 @@ export function AppLayout() {
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b border-border bg-white shadow-sm">
-        <div className="container mx-auto px-4 h-20 flex items-center justify-between gap-6">
+        <div className="container mx-auto px-4 h-20 flex items-center justify-between gap-3 lg:gap-6">
           <Link to="/" className="flex items-center gap-2">
             <img 
               src="/assets/logo.png" 
               alt="INTI Logo" 
-              className="w-10 h-10 object-contain md:hidden rounded-xl" 
+              className="w-10 h-10 object-contain lg:hidden rounded-xl" 
             />
             <img 
               src="/assets/INTI-40.png" 
               alt="INTI Logo" 
-              className="hidden md:block h-10 lg:h-12 w-auto object-contain" 
+              className="hidden lg:block h-10 lg:h-12 w-auto object-contain" 
             />
           </Link>
 
-          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden md:flex items-center relative" ref={dropdownRef}>
+          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden lg:flex items-center relative" ref={dropdownRef}>
             <Input 
               placeholder="Search for textbooks, furniture..." 
               value={searchQuery}
@@ -122,7 +122,7 @@ export function AppLayout() {
             )}
           </form>
 
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             <div className="hidden 2xl:flex items-center text-sm text-muted-foreground mr-2 font-medium">
               <MapPin className="h-4 w-4 mr-1" />
               INTI International University
@@ -159,15 +159,16 @@ export function AppLayout() {
                 <>
                   {user.role === "ADMIN" && (
                     <Link to="/admin" className="hidden sm:block">
-                      <Button variant="outline" className="font-semibold rounded-full border-primary text-primary hover:bg-red-50">
-                        Admin Panel
+                      <Button variant="outline" className="font-semibold rounded-full border-primary text-primary hover:bg-red-50 px-3 xl:px-4">
+                        <span className="hidden xl:inline">Admin Panel</span>
+                        <span className="xl:hidden">Admin</span>
                       </Button>
                     </Link>
                   )}
                   <Link to="/create-listing" className="hidden sm:block">
-                    <Button className="font-semibold rounded-full gap-2">
+                    <Button className="font-semibold rounded-full gap-2 px-3 xl:px-4">
                       <PlusCircle className="h-4 w-4" />
-                      Post an Item
+                      <span className="hidden xl:inline">Post an Item</span>
                     </Button>
                   </Link>
                   <Link to="/dashboard" className="hidden sm:block">
@@ -194,9 +195,9 @@ export function AppLayout() {
                     <Button variant="ghost" className="font-semibold text-foreground">Log In</Button>
                   </Link>
                   <Link to="/login" className="hidden sm:block">
-                    <Button className="font-semibold rounded-full gap-2">
+                    <Button className="font-semibold rounded-full gap-2 px-3 xl:px-4">
                       <PlusCircle className="h-4 w-4" />
-                      Post an Item
+                      <span className="hidden xl:inline">Post an Item</span>
                     </Button>
                   </Link>
                 </>
@@ -214,8 +215,8 @@ export function AppLayout() {
           </div>
         </div>
         
-        {/* Mobile Search - Only shows on mobile */}
-        <form onSubmit={handleSearchSubmit} className="md:hidden px-4 pb-4 bg-white">
+        {/* Mobile Search - Shows on mobile and tablet/small laptop */}
+        <form onSubmit={handleSearchSubmit} className="lg:hidden px-4 pb-4 bg-white">
           <div className="relative">
             <Input 
               placeholder="Search items..." 
