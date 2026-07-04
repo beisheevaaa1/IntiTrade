@@ -19,12 +19,16 @@ const categories = [
 const listingTemplates = [
   {
     title: "Calculus Early Transcendentals 8th Edition",
-    description: "Mint condition, used for first semester math course. No marks or highlights inside.",
+    description: "# Mint Condition Calculus Textbook\nUsed for the first semester math course.\n\n## Features:\n- **No marks** or highlights inside.\n- Includes clean original covers.\n- Essential for `MAT101` and `MAT102`.\n\n### Course Support:\n```math\nCalculus I, II & III\n```",
     price: "85.00",
     type: ListingType.PRODUCT,
     condition: ListingCondition.LIKE_NEW,
     categorySlug: "textbooks",
-    imageUrl: "/uploads/calculus.jpg"
+    imageUrls: [
+      "/uploads/calculus.jpg",
+      "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&q=80",
+      "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=600&q=80"
+    ]
   },
   {
     title: "iPad Air 4th Generation 64GB",
@@ -33,7 +37,11 @@ const listingTemplates = [
     type: ListingType.PRODUCT,
     condition: ListingCondition.GOOD,
     categorySlug: "electronics",
-    imageUrl: "/uploads/ipad.jpg"
+    imageUrls: [
+      "/uploads/ipad.jpg",
+      "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?w=600&q=80",
+      "https://images.unsplash.com/photo-1589739900243-4b52cd9b104e?w=600&q=80"
+    ]
   },
   {
     title: "Hostel Room Study Lamp",
@@ -42,16 +50,24 @@ const listingTemplates = [
     type: ListingType.PRODUCT,
     condition: ListingCondition.GOOD,
     categorySlug: "dorm-essentials",
-    imageUrl: "/uploads/lamp.jpg"
+    imageUrls: [
+      "/uploads/lamp.jpg",
+      "https://images.unsplash.com/photo-1507473885765-e6ed057f782c?w=600&q=80",
+      "https://images.unsplash.com/photo-1534073828943-f801091bb18c?w=600&q=80"
+    ]
   },
   {
     title: "Python Programming crash course help",
-    description: "One-on-one help with your assignments, loops, functions, and debugging support.",
+    description: "# Python Tutoring & Homework Help\nOne-on-one help with your assignments, loops, functions, and debugging support.\n\n## Topics Covered:\n- **Object Oriented Programming** (classes, inheritance)\n- Data Structures (`list`, `dict`, `set`)\n- File Handling & Automation\n\n### Example Code Snippet:\n```python\ndef greet_student(name):\n    print(f\"Welcome to INTI Trade, {name}!\")\n```",
     price: "20.00",
     type: ListingType.SERVICE,
     condition: ListingCondition.NOT_APPLICABLE,
     categorySlug: "tutoring",
-    imageUrl: "/uploads/python.jpg"
+    imageUrls: [
+      "/uploads/python.jpg",
+      "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=600&q=80",
+      "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?w=600&q=80"
+    ]
   },
   {
     title: "IKEA Micke Desk (White)",
@@ -60,7 +76,11 @@ const listingTemplates = [
     type: ListingType.PRODUCT,
     condition: ListingCondition.GOOD,
     categorySlug: "dorm-essentials",
-    imageUrl: "/uploads/desk.jpg"
+    imageUrls: [
+      "/uploads/desk.jpg",
+      "https://images.unsplash.com/photo-1518455027359-f3f8164ba6bd?w=600&q=80",
+      "https://images.unsplash.com/photo-1486946255434-2466348c2166?w=600&q=80"
+    ]
   },
   {
     title: "Nike Air Max 270 (Size US 9)",
@@ -69,7 +89,11 @@ const listingTemplates = [
     type: ListingType.PRODUCT,
     condition: ListingCondition.GOOD,
     categorySlug: "clothing",
-    imageUrl: "/uploads/nike.jpg"
+    imageUrls: [
+      "/uploads/nike.jpg",
+      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&q=80",
+      "https://images.unsplash.com/photo-1606107557195-0e29a4b5b4aa?w=600&q=80"
+    ]
   },
   {
     title: "Scientific Calculator Casio fx-570EX",
@@ -78,7 +102,11 @@ const listingTemplates = [
     type: ListingType.PRODUCT,
     condition: ListingCondition.LIKE_NEW,
     categorySlug: "textbooks",
-    imageUrl: "/uploads/calculator.jpg"
+    imageUrls: [
+      "/uploads/calculator.jpg",
+      "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600&q=80",
+      "https://images.unsplash.com/photo-1587145820266-a5951ee6f620?w=600&q=80"
+    ]
   },
   {
     title: "Graphic Design for Club Event Posters",
@@ -87,7 +115,11 @@ const listingTemplates = [
     type: ListingType.SERVICE,
     condition: ListingCondition.NOT_APPLICABLE,
     categorySlug: "creative-services",
-    imageUrl: "/uploads/design.jpg"
+    imageUrls: [
+      "/uploads/design.jpg",
+      "https://images.unsplash.com/photo-1626785774573-4b799315345d?w=600&q=80",
+      "https://images.unsplash.com/photo-1561070791-26c113006238?w=600&q=80"
+    ]
   },
   {
     title: "Ride share to KL Sentral",
@@ -96,7 +128,11 @@ const listingTemplates = [
     type: ListingType.SERVICE,
     condition: ListingCondition.NOT_APPLICABLE,
     categorySlug: "transport",
-    imageUrl: "/uploads/ride.jpg"
+    imageUrls: [
+      "/uploads/ride.jpg",
+      "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=600&q=80",
+      "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=80"
+    ]
   },
   {
     title: "Wilson Tennis Racket with cover",
@@ -105,7 +141,11 @@ const listingTemplates = [
     type: ListingType.PRODUCT,
     condition: ListingCondition.GOOD,
     categorySlug: "sports",
-    imageUrl: "/uploads/racket.jpg"
+    imageUrls: [
+      "/uploads/racket.jpg",
+      "https://images.unsplash.com/photo-1622279457486-62dcc4a4aba5?w=600&q=80",
+      "https://images.unsplash.com/photo-1595435934249-5df7ed86e1c0?w=600&q=80"
+    ]
   }
 ];
 
@@ -289,13 +329,15 @@ async function main() {
         }
       });
 
-      // Create beautiful cover image for the listing
-      await prisma.listingImage.create({
-        data: {
-          url: template.imageUrl,
-          listingId: listing.id
-        }
-      });
+      // Create multiple high-quality images for the listing
+      for (const imgUrl of template.imageUrls) {
+        await prisma.listingImage.create({
+          data: {
+            url: imgUrl,
+            listingId: listing.id
+          }
+        });
+      }
 
       allListings.push(listing);
     }

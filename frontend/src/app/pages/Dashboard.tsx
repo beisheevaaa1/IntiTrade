@@ -261,12 +261,14 @@ export function Dashboard() {
 
                   return (
                     <div key={item.id} className="p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:bg-gray-50 transition-colors">
-                      <div className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden border border-border shrink-0">
+                      <Link to={`/product/${item.id}`} className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden border border-border shrink-0 hover:opacity-90 transition-opacity">
                         <img src={firstImg} className="w-full h-full object-cover" alt="Item" />
-                      </div>
+                      </Link>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-foreground text-sm truncate">{item.title}</h4>
+                          <Link to={`/product/${item.id}`} className="font-semibold text-foreground text-sm truncate hover:text-primary transition-colors">
+                            {item.title}
+                          </Link>
                           <span className={`px-2 py-0.5 text-[9px] font-bold rounded ${
                             item.status === "ACTIVE" ? "bg-green-100 text-green-700" :
                             item.status === "PENDING" ? "bg-yellow-100 text-yellow-700" :
