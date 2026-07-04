@@ -73,8 +73,19 @@ export function AppLayout() {
       <header className="sticky top-0 z-50 w-full border-b border-border bg-white shadow-sm">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between gap-6">
           <Link to="/" className="flex items-center gap-2">
-            <img src="/assets/INTI-40.png" alt="INTI Logo" className="w-10 h-10 object-contain rounded-xl" />
-            <span className="font-bold text-2xl text-foreground hidden lg:block">IntiTrade</span>
+            <img 
+              src="/assets/logo.png" 
+              alt="INTI Logo" 
+              className="w-10 h-10 object-contain md:hidden rounded-xl" 
+            />
+            <img 
+              src="/assets/INTI-40.png" 
+              alt="INTI Logo" 
+              className="hidden md:block h-10 lg:h-12 w-auto object-contain" 
+            />
+            <span className="font-bold text-2xl text-foreground hidden lg:block ml-2 border-l pl-3 border-gray-200">
+              IntiTrade
+            </span>
           </Link>
 
           <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden md:flex items-center relative" ref={dropdownRef}>
@@ -230,9 +241,9 @@ export function AppLayout() {
         <div className="container mx-auto px-4 py-12">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
-              <div className="flex items-center gap-2 mb-4">
-                <img src="/assets/INTI-40.png" alt="INTI Logo" className="w-8 h-8 object-contain rounded-lg" />
-                <span className="font-bold text-xl text-foreground">IntiTrade</span>
+              <div className="flex items-center gap-3 mb-4">
+                <img src="/assets/logo.png" alt="INTI Logo" className="w-12 h-12 object-contain rounded-xl" />
+                <span className="font-bold text-2xl text-foreground">IntiTrade</span>
               </div>
               <p className="text-muted-foreground text-sm mb-4 leading-relaxed">
                 A trusted marketplace exclusively for verified INTI students, staff, and professors. Buy and sell safely within your campus community.

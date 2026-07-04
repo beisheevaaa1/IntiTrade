@@ -38,11 +38,9 @@ export function Login() {
       
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-border">
         <div className="text-center">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-primary text-white flex items-center justify-center rounded-xl font-bold text-xl">
-              I
-            </div>
-            <span className="font-bold text-2xl text-foreground">IntiTrade</span>
+          <Link to="/" className="inline-flex items-center gap-3 mb-6">
+            <img src="/assets/logo.png" alt="INTI Logo" className="w-12 h-12 object-contain rounded-xl" />
+            <span className="font-bold text-3xl text-foreground">IntiTrade</span>
           </Link>
           <h2 className="text-3xl font-extrabold text-gray-900">Welcome back</h2>
           <p className="mt-2 text-sm text-muted-foreground">
