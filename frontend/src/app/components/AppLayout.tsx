@@ -83,9 +83,6 @@ export function AppLayout() {
               alt="INTI Logo" 
               className="hidden md:block h-10 lg:h-12 w-auto object-contain" 
             />
-            <span className="font-bold text-2xl text-foreground hidden lg:block ml-2 border-l pl-3 border-gray-200">
-              IntiTrade
-            </span>
           </Link>
 
           <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden md:flex items-center relative" ref={dropdownRef}>
