@@ -14,6 +14,34 @@ export function AppLayout() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const dropdownRef = React.useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+    const delayDebounce = setTimeout(() => {
+      api.get("/listings/autocomplete", { params: { q: searchQuery } })
+        .then((res) => setSuggestions(res.data.suggestions || []))
+        .catch((err) => console.error(err));
+    }, 250);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
 
   useEffect(() => {
     if (!user) { setNotifications([]); setUnreadMessages(0); return; }
@@ -51,17 +79,41 @@ export function AppLayout() {
             <span className="font-bold text-2xl text-foreground hidden lg:block">IntiTrade</span>
           </Link>
 
-          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden md:flex items-center relative">
+          <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden md:flex items-center relative" ref={dropdownRef}>
             <Input 
               placeholder="Search for textbooks, furniture..." 
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-full pl-12 h-12 bg-gray-50 border-gray-200"
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              onFocus={() => setShowSuggestions(true)}
+              className="w-full rounded-full pl-12 pr-20 h-12 bg-gray-50 border-gray-200"
             />
             <Search className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
             <Button type="submit" className="absolute right-1 top-1 h-10 rounded-full px-4">
               Go
             </Button>
+            
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute top-14 left-0 w-full bg-white border border-border shadow-2xl rounded-2xl p-2 z-50 animate-in fade-in duration-100">
+                {suggestions.map((suggestion, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery(suggestion);
+                      setShowSuggestions(false);
+                      navigate(`/browse?search=${encodeURIComponent(suggestion)}`);
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-gray-50 rounded-xl text-sm font-semibold text-gray-700 hover:text-primary transition-colors flex items-center gap-2"
+                  >
+                    <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span>{suggestion}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </form>
 
           <div className="flex items-center gap-2 sm:gap-4">

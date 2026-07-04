@@ -52,6 +52,22 @@ router.get("/categories", async (_req, res) => {
   res.json({ categories });
 });
 
+router.get("/autocomplete", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q.length < 2) return res.json({ suggestions: [] });
+
+  const listings = await prisma.listing.findMany({
+    where: {
+      status: ListingStatus.ACTIVE,
+      title: { contains: q, mode: "insensitive" }
+    },
+    select: { id: true, title: true },
+    take: 8
+  });
+
+  res.json({ suggestions: Array.from(new Set(listings.map((l) => l.title))) });
+});
+
 router.get("/", async (req, res) => {
   const text = (key: string) => typeof req.query[key] === "string" && req.query[key] ? String(req.query[key]).trim() : undefined;
   const q = text("q") ?? text("search");

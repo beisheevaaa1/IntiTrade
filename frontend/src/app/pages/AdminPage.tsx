@@ -29,7 +29,7 @@ export function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<"moderation" | "students" | "transactions" | "reports" | "reviews" | "announcements">("moderation");
+  const [activeTab, setActiveTab] = useState<"moderation" | "students" | "transactions" | "reports" | "reviews" | "announcements" | "disputes">("moderation");
   
   // Data States
   const [pendingListings, setPendingListings] = useState<Listing[]>([]);
@@ -38,6 +38,7 @@ export function AdminPage() {
   const [reports, setReports] = useState<Report[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [disputes, setDisputes] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Rejection Dialog State
@@ -68,6 +69,10 @@ export function AdminPage() {
       // Get transactions
       const txsRes = await api.get("/admin/transactions");
       setTransactions(txsRes.data.transactions || []);
+
+      // Get disputes
+      const disputesRes = await api.get("/admin/disputes");
+      setDisputes(disputesRes.data.disputes || []);
 
       // Get reports
       const reportsRes = await api.get("/admin/reports");
@@ -160,6 +165,23 @@ export function AdminPage() {
     if (status === "REJECTED" && !rejectionReason) return;
     await api.patch(`/admin/announcements/${id}/status`, { status, rejectionReason });
     setAnnouncements((current) => current.map((announcement) => announcement.id === id ? { ...announcement, status, rejectionReason } : announcement));
+  };
+
+  const handleResolveDispute = async (id: string, verdict: "COMPLETED" | "CANCELLED") => {
+    const reason = window.prompt(`Please provide a reason for resolving this dispute as ${verdict.toLowerCase()}:`);
+    if (reason === null) return;
+    
+    setActionLoading(true);
+    try {
+      await api.patch(`/admin/disputes/${id}/resolve`, { verdict, reason });
+      setDisputes(disputes.filter(d => d.id !== id));
+      alert(`Dispute resolved as ${verdict}`);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.response?.data?.message || "Action failed.");
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Group Students by ID Range (e.g., Intake ranges)
@@ -265,6 +287,17 @@ export function AdminPage() {
           <button onClick={() => setActiveTab("announcements")} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${activeTab === "announcements" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"}`}>
             <Megaphone className="w-4 h-4" /> Announcements
             {announcements.filter((announcement) => announcement.status === "PENDING").length > 0 && <Badge className="bg-red-200 text-red-800">{announcements.filter((announcement) => announcement.status === "PENDING").length}</Badge>}
+          </button>
+          <button 
+            onClick={() => setActiveTab("disputes")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
+              activeTab === "disputes" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" /> Trade Disputes
+            {disputes.length > 0 && (
+              <Badge className="bg-red-200 text-red-800 ml-1 font-bold">{disputes.length}</Badge>
+            )}
           </button>
         </div>
 
@@ -580,6 +613,67 @@ export function AdminPage() {
                         {report.details && (
                           <p className="text-xs text-gray-600"><strong>Additional details:</strong> {report.details}</p>
                         )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 7. Trade Disputes */}
+        {activeTab === "disputes" && (
+          <div className="space-y-6">
+            <h2 className="text-xl font-bold text-gray-900">Active Trade Disputes ({disputes.length})</h2>
+            
+            {disputes.length === 0 ? (
+              <div className="bg-white text-center py-12 rounded-2xl border border-border shadow-sm text-muted-foreground">
+                No active disputes. All transactions running smoothly!
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {disputes.map(dispute => (
+                  <Card key={dispute.id} className="bg-white border-border shadow-sm overflow-hidden">
+                    <CardContent className="p-6 space-y-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                          <Badge className="mb-2 bg-amber-100 text-amber-800 border-none font-bold">
+                            DISPUTED
+                          </Badge>
+                          <h3 className="font-bold text-lg text-foreground">
+                            Listing: {dispute.listing?.title}
+                          </h3>
+                          <p className="text-xs text-muted-foreground">
+                            Seller: <span className="font-semibold text-gray-700">{dispute.seller?.name}</span> ({dispute.seller?.email}) · 
+                            Buyer: <span className="font-semibold text-gray-700">{dispute.buyer?.name}</span> ({dispute.buyer?.email})
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Price: <strong>RM {parseFloat(dispute.price).toFixed(2)}</strong> · Date: {new Date(dispute.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                          <Button 
+                            onClick={() => handleResolveDispute(dispute.id, "COMPLETED")}
+                            disabled={actionLoading}
+                            className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg"
+                          >
+                            Release Funds (Complete)
+                          </Button>
+                          <Button 
+                            onClick={() => handleResolveDispute(dispute.id, "CANCELLED")}
+                            disabled={actionLoading}
+                            variant="destructive"
+                            className="text-xs font-bold rounded-lg"
+                          >
+                            Cancel Transaction
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-xl">
+                        <p className="text-sm text-amber-900"><strong>Dispute Reason:</strong> {dispute.disputeReason || "No reason provided."}</p>
                       </div>
                     </CardContent>
                   </Card>

@@ -1,4 +1,4 @@
-import { ListingStatus, ListingType, TransactionStatus } from "@prisma/client";
+import { ListingCondition, ListingStatus, ListingType, Role, TransactionStatus } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
@@ -44,6 +44,9 @@ router.post("/", requireAuth, async (req, res) => {
     if (parsed.data.quantity > available) return res.status(409).json({ message: `Only ${Math.max(0, available)} item(s) are available` });
   }
 
+  // Generate 4-digit OTP for meetup validation code
+  const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+
   const transaction = await prisma.transaction.create({
     data: {
       listingId: listing.id,
@@ -51,7 +54,8 @@ router.post("/", requireAuth, async (req, res) => {
       sellerId: listing.sellerId,
       price: listing.price,
       quantity: listing.type === ListingType.PRODUCT ? parsed.data.quantity : 1,
-      meetupPointId: parsed.data.meetupPointId
+      meetupPointId: parsed.data.meetupPointId,
+      otpCode
     },
     include: transactionInclude
   });
@@ -65,7 +69,8 @@ router.post("/", requireAuth, async (req, res) => {
 router.patch("/:id/status", requireAuth, async (req, res) => {
   const parsed = z.object({
     status: z.enum(["COMPLETED", "CANCELLED", "DISPUTED"]),
-    reason: z.string().trim().max(500).optional()
+    reason: z.string().trim().max(500).optional(),
+    otpCode: z.string().trim().optional()
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid transaction update" });
 
@@ -74,8 +79,13 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
     return res.status(404).json({ message: "Transaction not found" });
   }
   if (existing.status !== TransactionStatus.RESERVED) return res.status(409).json({ message: "This transaction is already closed" });
-  if (parsed.data.status === "COMPLETED" && existing.sellerId !== req.user!.id) {
-    return res.status(403).json({ message: "Only the seller can complete the handoff" });
+  if (parsed.data.status === "COMPLETED") {
+    if (existing.sellerId !== req.user!.id) {
+      return res.status(403).json({ message: "Only the seller can complete the handoff" });
+    }
+    if (existing.otpCode && existing.otpCode !== parsed.data.otpCode) {
+      return res.status(400).json({ message: "Invalid transaction validation code (OTP)" });
+    }
   }
   if (parsed.data.status === "DISPUTED" && !parsed.data.reason) return res.status(400).json({ message: "A dispute reason is required" });
 
@@ -103,6 +113,75 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
     data: { userId: recipientId, type: `TRANSACTION_${parsed.data.status}`, payload: JSON.stringify({ transactionId: transaction.id, listingId: transaction.listingId }) }
   });
   res.json({ transaction });
+});
+
+router.post("/messages/:messageId/accept-offer", requireAuth, async (req, res) => {
+  const message = await prisma.message.findUnique({
+    where: { id: req.params.messageId },
+    include: { conversation: true }
+  });
+
+  if (!message || !message.offerAmount) {
+    return res.status(404).json({ message: "Offer message not found" });
+  }
+
+  if (message.conversation.sellerId !== req.user!.id) {
+    return res.status(403).json({ message: "Only the seller can accept offers" });
+  }
+
+  if (message.offerStatus && message.offerStatus !== "PENDING") {
+    return res.status(409).json({ message: "This offer has already been resolved" });
+  }
+
+  const updatedMessage = await prisma.message.update({
+    where: { id: message.id },
+    data: { offerStatus: "ACCEPTED" }
+  });
+
+  const activeTransaction = await prisma.transaction.findFirst({
+    where: {
+      listingId: message.conversation.listingId,
+      buyerId: message.conversation.buyerId,
+      status: "RESERVED"
+    }
+  });
+
+  let updatedTransaction = null;
+  if (activeTransaction) {
+    updatedTransaction = await prisma.transaction.update({
+      where: { id: activeTransaction.id },
+      data: { price: message.offerAmount },
+      include: transactionInclude
+    });
+  }
+
+  res.json({ message: updatedMessage, transaction: updatedTransaction });
+});
+
+router.post("/messages/:messageId/decline-offer", requireAuth, async (req, res) => {
+  const message = await prisma.message.findUnique({
+    where: { id: req.params.messageId },
+    include: { conversation: true }
+  });
+
+  if (!message || !message.offerAmount) {
+    return res.status(404).json({ message: "Offer message not found" });
+  }
+
+  if (message.conversation.sellerId !== req.user!.id) {
+    return res.status(403).json({ message: "Only the seller can decline offers" });
+  }
+
+  if (message.offerStatus && message.offerStatus !== "PENDING") {
+    return res.status(409).json({ message: "This offer has already been resolved" });
+  }
+
+  const updatedMessage = await prisma.message.update({
+    where: { id: message.id },
+    data: { offerStatus: "DECLINED" }
+  });
+
+  res.json({ message: updatedMessage });
 });
 
 router.post("/:id/review", requireAuth, async (req, res) => {

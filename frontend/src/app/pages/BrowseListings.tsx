@@ -62,10 +62,10 @@ export function BrowseListings() {
   }, [searchParams]);
 
   // Fetch Listings with filters
-  const fetchListings = () => {
+  const fetchListings = (currentPage = page, append = false) => {
     setLoading(true);
     const params: any = {
-      page,
+      page: currentPage,
       limit: 12,
       status: "ACTIVE",
     };
@@ -99,7 +99,8 @@ export function BrowseListings() {
 
     api.get("/listings", { params })
       .then((res) => {
-        setListings(res.data.listings || []);
+        const newListings = res.data.listings || [];
+        setListings((prev) => append ? [...prev, ...newListings] : newListings);
         setTotalPages(res.data.pagination?.totalPages || 1);
       })
       .catch((err) => console.error("Error fetching listings:", err))
@@ -107,13 +108,21 @@ export function BrowseListings() {
   };
 
   useEffect(() => {
-    fetchListings();
-  }, [selectedCategory, selectedConditions, listingType, sellerType, minRating, sortBy, page]);
+    setPage(1);
+    fetchListings(1, false);
+  }, [selectedCategory, selectedConditions, listingType, sellerType, minRating, sortBy]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSearchParams({ search: searchQuery, category: selectedCategory });
-    fetchListings();
+    setPage(1);
+    fetchListings(1, false);
+  };
+
+  const loadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchListings(nextPage, true);
   };
 
   const handleConditionToggle = (cond: string) => {
@@ -341,8 +350,38 @@ export function BrowseListings() {
             )}
           </div>
 
+          {/* Categories Horizontal Chips */}
+          <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-none shrink-0 mb-6 border-b">
+            <button
+              onClick={() => setSelectedCategory("")}
+              className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                selectedCategory === "" 
+                  ? "bg-primary text-white border-primary shadow-sm" 
+                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              All Categories
+            </button>
+            {(categories.length ? categories : staticCategories).map((cat) => {
+              const isSelected = selectedCategory === cat.slug;
+              return (
+                <button
+                  key={cat.slug}
+                  onClick={() => setSelectedCategory(cat.slug)}
+                  className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
+                    isSelected 
+                      ? "bg-primary text-white border-primary shadow-sm" 
+                      : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  {cat.name}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Grid or Loader */}
-          {loading ? (
+          {loading && page === 1 ? (
             <div className="flex justify-center items-center py-24">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -360,34 +399,16 @@ export function BrowseListings() {
             </div>
           )}
 
-          {/* Pagination */}
-          {!loading && totalPages > 1 && (
-            <div className="flex justify-center items-center gap-2">
+          {/* Load More Button */}
+          {page < totalPages && (
+            <div className="flex justify-center mt-10">
               <Button 
-                variant="outline" 
-                disabled={page === 1}
-                onClick={() => setPage(page - 1)}
-                className="w-10 h-10 p-0 rounded-lg"
+                onClick={loadMore}
+                disabled={loading}
+                className="rounded-full px-8 py-3 font-semibold text-sm shadow-md"
               >
-                &lt;
-              </Button>
-              {Array.from({ length: totalPages }).map((_, i) => (
-                <Button 
-                  key={i}
-                  variant={page === i + 1 ? "default" : "outline"}
-                  onClick={() => setPage(i + 1)}
-                  className="w-10 h-10 p-0 rounded-lg"
-                >
-                  {i + 1}
-                </Button>
-              ))}
-              <Button 
-                variant="outline" 
-                disabled={page === totalPages}
-                onClick={() => setPage(page + 1)}
-                className="w-10 h-10 p-0 rounded-lg"
-              >
-                &gt;
+                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Load More Items
               </Button>
             </div>
           )}

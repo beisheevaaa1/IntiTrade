@@ -92,6 +92,9 @@ export function Inbox() {
   const [unreadCount, setUnreadCount] = useState(0);
   const prevMessagesLength = useRef(0);
 
+  const [otpValue, setOtpValue] = useState("");
+  const [txSubmitting, setTxSubmitting] = useState(false);
+
   const activeConvId = searchParams.get("conversationId");
 
   // Apply theme color helper
@@ -167,6 +170,18 @@ export function Inbox() {
       });
       // Refresh list to show last message
       fetchConversations(activeConversation?.id);
+    });
+
+    socket.on("messages:read", (data: { conversationId: string; readAt: string }) => {
+      if (activeConversation && data.conversationId === activeConversation.id) {
+        setMessages((current) =>
+          current.map((msg) =>
+            msg.sender.id === user?.id
+              ? { ...msg, readAt: data.readAt }
+              : msg
+          )
+        );
+      }
     });
 
     // Listen to typing events
@@ -321,6 +336,44 @@ export function Inbox() {
     await api.post(`/community/blocks/${partnerId}`);
     setActiveConversation(null);
     void fetchConversations();
+  };
+
+  const handleResolveOffer = async (messageId: string, action: "accept" | "decline") => {
+    try {
+      const res = await api.post(`/transactions/messages/${messageId}/${action}-offer`);
+      setMessages((current) =>
+        current.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, offerStatus: action === "accept" ? "ACCEPTED" : "DECLINED" }
+            : msg
+        )
+      );
+      void fetchConversations(activeConversation?.id);
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to resolve offer.");
+    }
+  };
+
+  const handleUpdateTxStatus = async (txId: string, status: "COMPLETED" | "CANCELLED" | "DISPUTED", otp?: string) => {
+    let reason = "";
+    if (status === "DISPUTED") {
+      const input = window.prompt("Please state the reason for disputing this transaction:");
+      if (!input) return;
+      reason = input.trim();
+    } else if (status === "CANCELLED") {
+      if (!window.confirm("Are you sure you want to cancel this reservation?")) return;
+    }
+    setTxSubmitting(true);
+    try {
+      await api.patch(`/transactions/${txId}/status`, { status, reason: reason || undefined, otpCode: otp });
+      alert(`Transaction marked as ${status.toLowerCase()}`);
+      setOtpValue("");
+      void fetchConversations(activeConversation?.id);
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Action failed.");
+    } finally {
+      setTxSubmitting(false);
+    }
   };
 
   // Open the switcher and load listing candidates
@@ -567,6 +620,87 @@ export function Inbox() {
             </Button>
           </div>
 
+          {/* Transaction Status & Verification Banner */}
+          {activeConversation.listing?.transactions?.[0] && (() => {
+            const tx = activeConversation.listing.transactions[0];
+            const isBuyer = tx.buyerId === user?.id;
+            const isSeller = tx.sellerId === user?.id;
+
+            return (
+              <div className="bg-green-50 border-b border-green-100 p-3 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 text-green-900 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0"></div>
+                  <div>
+                    <span className="font-bold">Reservation Active:</span> Quantity: {tx.quantity} · Price: RM {parseFloat(tx.price).toFixed(2)}
+                    {tx.meetupPoint && <p className="text-[10px] text-green-700 mt-0.5">Meetup point: <strong>{tx.meetupPoint.name}</strong></p>}
+                  </div>
+                </div>
+                
+                {isBuyer && tx.otpCode && (
+                  <div className="bg-white border border-green-200 rounded-xl p-2 px-3 self-start sm:self-auto flex items-center gap-2">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-green-600">Your Code (OTP)</span>
+                    <span className="font-extrabold text-sm tracking-widest text-gray-900">{tx.otpCode}</span>
+                  </div>
+                )}
+
+                {isSeller && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input 
+                      placeholder="Enter OTP" 
+                      value={otpValue} 
+                      onChange={(e) => setOtpValue(e.target.value.slice(0, 4))} 
+                      className="w-24 h-8 bg-white border-green-300 focus-visible:ring-green-500 rounded-lg text-center text-sm font-bold tracking-widest"
+                    />
+                    <Button 
+                      onClick={() => handleUpdateTxStatus(tx.id, "COMPLETED", otpValue)}
+                      disabled={otpValue.length !== 4 || txSubmitting}
+                      className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 h-8 rounded-lg"
+                    >
+                      Verify & Complete
+                    </Button>
+                    <Button 
+                      onClick={() => handleUpdateTxStatus(tx.id, "CANCELLED")}
+                      disabled={txSubmitting}
+                      variant="ghost" 
+                      className="text-red-600 hover:text-red-700 hover:bg-red-50 text-xs font-bold py-1 h-8 rounded-lg"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={() => handleUpdateTxStatus(tx.id, "DISPUTED")}
+                      disabled={txSubmitting}
+                      variant="ghost" 
+                      className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 text-xs font-bold py-1 h-8 rounded-lg"
+                    >
+                      Dispute
+                    </Button>
+                  </div>
+                )}
+
+                {isBuyer && (
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={() => handleUpdateTxStatus(tx.id, "CANCELLED")}
+                      disabled={txSubmitting}
+                      variant="outline" 
+                      className="bg-white border-gray-300 hover:bg-gray-100 text-gray-700 text-xs font-bold py-1 h-8 rounded-lg"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={() => handleUpdateTxStatus(tx.id, "DISPUTED")}
+                      disabled={txSubmitting}
+                      variant="ghost" 
+                      className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 text-xs font-bold py-1 h-8 rounded-lg"
+                    >
+                      Dispute
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Messages List - Fixed Overflow Scroll */}
           <div className="flex-1 min-h-0 relative flex flex-col">
             <div 
@@ -593,11 +727,52 @@ export function Inbox() {
                         ? 'bg-primary text-white rounded-tr-sm' 
                         : 'bg-white border border-border text-gray-800 rounded-tl-sm'
                     }`}>
-                      {msg.offerAmount && <div className={`rounded-xl p-3 mb-2 ${isMe ? "bg-white/15" : "bg-green-50 text-green-900 border border-green-100"}`}><p className="text-[10px] font-bold uppercase tracking-wide">Price offer</p><p className="text-lg font-extrabold">RM {Number(msg.offerAmount).toFixed(2)}</p></div>}
+                      {msg.offerAmount && (
+                        <div className={`rounded-xl p-3 mb-2 ${isMe ? "bg-white/15" : "bg-green-50 text-green-900 border border-green-100"}`}>
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-xs">Price offer</p>
+                          <p className="text-lg font-extrabold">RM {Number(msg.offerAmount).toFixed(2)}</p>
+                          {msg.offerStatus === "ACCEPTED" && (
+                            <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-bold bg-green-600 text-white rounded-full">Offer Accepted</span>
+                          )}
+                          {msg.offerStatus === "DECLINED" && (
+                            <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-bold bg-red-600 text-white rounded-full">Offer Declined</span>
+                          )}
+                          {(!msg.offerStatus || msg.offerStatus === "PENDING") && activeConversation.sellerId === user?.id && !isMe && (
+                            <div className="flex gap-2 mt-3">
+                              <Button 
+                                type="button" 
+                                onClick={() => handleResolveOffer(msg.id, "accept")} 
+                                className="bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold py-1 h-7 rounded-lg"
+                              >
+                                Accept
+                              </Button>
+                              <Button 
+                                type="button" 
+                                onClick={() => handleResolveOffer(msg.id, "decline")} 
+                                variant="outline" 
+                                className="bg-white hover:bg-gray-100 text-gray-700 border-gray-300 text-[10px] font-bold py-1 h-7 rounded-lg"
+                              >
+                                Decline
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {msg.attachmentUrl && <img src={mediaUrl(msg.attachmentUrl)} alt="Chat attachment" className="rounded-xl max-h-60 object-cover mb-2" />}
                       {msg.body && <p className="text-sm break-words whitespace-pre-wrap">{msg.body}</p>}
-                      <span className={`text-[9px] block mt-1 ${isMe ? 'text-red-200 text-right' : 'text-gray-400'}`}>
-                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{isMe ? ` · ${msg.readAt ? "Read" : "Sent"}` : ""}
+                      <span className={`text-[9px] block mt-1 flex items-center justify-end gap-1 ${isMe ? 'text-red-200' : 'text-gray-400'}`}>
+                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {isMe && (
+                          <span className="flex text-xs">
+                            {msg.readAt ? (
+                              <span className="text-blue-300 font-bold" title="Read">✓✓</span>
+                            ) : msg.deliveredAt ? (
+                              <span className="text-gray-300 font-bold" title="Delivered">✓✓</span>
+                            ) : (
+                              <span className="text-red-200 font-bold" title="Sent">✓</span>
+                            )}
+                          </span>
+                        )}
                       </span>
                     </div>
                   </div>

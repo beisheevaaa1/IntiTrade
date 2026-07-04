@@ -180,5 +180,74 @@ router.patch("/announcements/:id/status", async (req, res) => {
   });
   res.json({ announcement });
 });
+router.get("/disputes", async (_req, res) => {
+  const disputes = await prisma.transaction.findMany({
+    where: { status: "DISPUTED" },
+    include: {
+      listing: { select: { id: true, title: true, price: true } },
+      buyer: { select: { id: true, name: true, email: true } },
+      seller: { select: { id: true, name: true, email: true } }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json({ disputes });
+});
+
+router.patch("/disputes/:id/resolve", async (req, res) => {
+  const parsed = z.object({
+    verdict: z.enum(["COMPLETED", "CANCELLED"]),
+    reason: z.string().trim().max(500).optional()
+  }).safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({ message: "Invalid verdict. Must be COMPLETED or CANCELLED." });
+  }
+
+  const transaction = await prisma.transaction.findFirst({
+    where: { id: req.params.id, status: "DISPUTED" },
+    include: { listing: true }
+  });
+
+  if (!transaction) {
+    return res.status(404).json({ message: "Disputed transaction not found" });
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (parsed.data.verdict === "COMPLETED" && transaction.listing.type === "PRODUCT") {
+      const remaining = Math.max(0, transaction.listing.quantity - transaction.quantity);
+      await tx.listing.update({
+        where: { id: transaction.listingId },
+        data: { quantity: remaining, status: remaining === 0 ? "SOLD" : "ACTIVE" }
+      });
+    }
+
+    return tx.transaction.update({
+      where: { id: transaction.id },
+      data: {
+        status: parsed.data.verdict === "COMPLETED" ? "COMPLETED" : "CANCELLED",
+        completedAt: parsed.data.verdict === "COMPLETED" ? new Date() : undefined,
+        cancelledAt: parsed.data.verdict === "CANCELLED" ? new Date() : undefined
+      }
+    });
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.user!.id,
+      action: `DISPUTE_RESOLVE_${parsed.data.verdict}`,
+      entityType: "Transaction",
+      entityId: transaction.id,
+      reason: parsed.data.reason || null
+    }
+  });
+
+  const payload = JSON.stringify({ transactionId: transaction.id, verdict: parsed.data.verdict, reason: parsed.data.reason });
+  await Promise.all([
+    prisma.notification.create({ data: { userId: transaction.buyerId, type: "DISPUTE_RESOLVED", payload } }),
+    prisma.notification.create({ data: { userId: transaction.sellerId, type: "DISPUTE_RESOLVED", payload } })
+  ]);
+
+  res.json({ transaction: updated });
+});
 
 export default router;

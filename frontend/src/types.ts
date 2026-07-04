@@ -71,6 +71,7 @@ export type Listing = {
   category: Category;
   images: ListingImage[];
   _count?: { favorites: number; reports: number };
+  transactions?: Transaction[];
 };
 
 export type Message = {
@@ -80,8 +81,10 @@ export type Message = {
   sender: Pick<User, "id" | "name">;
   senderId?: string;
   readAt?: string | null;
+  deliveredAt?: string | null;
   attachmentUrl?: string | null;
   offerAmount?: string | null;
+  offerStatus?: "PENDING" | "ACCEPTED" | "DECLINED" | null;
 };
 
 export type Conversation = {
@@ -123,6 +126,7 @@ export type Transaction = {
   quantity: number;
   status: "RESERVED" | "COMPLETED" | "CANCELLED" | "DISPUTED";
   meetupPoint?: MeetupPoint | null;
+  otpCode?: string | null;
   completedAt?: string | null;
   cancelledAt?: string | null;
   disputeReason?: string | null;

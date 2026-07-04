@@ -3,12 +3,20 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
 import { handleAutoReply } from "../utils/autoReply.js";
-import { ListingStatus } from "@prisma/client";
+import { ListingStatus, TransactionStatus } from "@prisma/client";
 
 const router = Router();
 
 const conversationInclude = {
-  listing: { include: { images: true } },
+  listing: {
+    include: {
+      images: true,
+      meetupPoint: true,
+      transactions: {
+        where: { status: TransactionStatus.RESERVED }
+      }
+    }
+  },
   buyer: { select: { id: true, name: true, avatarUrl: true, lastActiveAt: true, showOnlineStatus: true } },
   seller: { select: { id: true, name: true, avatarUrl: true, lastActiveAt: true, showOnlineStatus: true } },
   messages: {
