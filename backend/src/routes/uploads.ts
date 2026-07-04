@@ -17,9 +17,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024, files: 6 },
+  limits: { fileSize: 100 * 1024 * 1024, files: 25 },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) return cb(new Error("Only images are allowed"));
+    const isImage = file.mimetype.startsWith("image/");
+    const isVideo = file.mimetype.startsWith("video/");
+    if (!isImage && !isVideo) {
+      return cb(new Error("Only images and videos are allowed"));
+    }
     cb(null, true);
   }
 });
@@ -28,7 +32,22 @@ const router = Router();
 
 router.post("/", requireAuth, upload.any(), (req, res) => {
   const files = (req.files ?? []) as Express.Multer.File[];
-  if (files.length > 6) return res.status(400).json({ message: "Maximum of 6 images allowed" });
+  
+  for (const file of files) {
+    const isImage = file.mimetype.startsWith("image/");
+    const isVideo = file.mimetype.startsWith("video/");
+    
+    if (isImage && file.size > 5 * 1024 * 1024) {
+      try { fs.unlinkSync(file.path); } catch {}
+      return res.status(400).json({ message: "Image files must be less than 5MB" });
+    }
+    
+    if (isVideo && file.size > 100 * 1024 * 1024) {
+      try { fs.unlinkSync(file.path); } catch {}
+      return res.status(400).json({ message: "Video files must be less than 100MB" });
+    }
+  }
+
   const urls = files.map((file) => `/uploads/${file.filename}`);
   res.status(201).json({
     urls,

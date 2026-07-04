@@ -29,17 +29,28 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const numericPrice = parseFloat(product.price);
 
+  const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes("video");
+
   return (
     <Card className="group overflow-hidden flex flex-col h-full border-border hover:border-gray-300 hover:shadow-md transition-all duration-200">
       <Link to={`/product/${product.id}`} className="relative aspect-square overflow-hidden bg-muted block">
-        <img
-          src={firstImage}
-          alt={product.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1541963463532-d68292c34b19?q=80&w=600";
-          }}
-        />
+        {isVideoUrl(firstImage) ? (
+          <video
+            src={firstImage}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            muted
+            playsInline
+          />
+        ) : (
+          <img
+            src={firstImage}
+            alt={product.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1541963463532-d68292c34b19?q=80&w=600";
+            }}
+          />
+        )}
         
         {/* Badges */}
         <div className="absolute top-3 left-3 flex flex-col gap-2">

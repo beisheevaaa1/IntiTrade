@@ -142,6 +142,7 @@ export function ProductDetail() {
       </div>
     );
   }
+  const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes("video");
 
   const imagesList = product.images && product.images.length > 0
     ? product.images.map(img => mediaUrl(img.url))
@@ -164,29 +165,55 @@ export function ProductDetail() {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Left Column: Images & Description */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white rounded-2xl border border-border aspect-video flex items-center justify-center overflow-hidden relative shadow-sm">
-              <img 
-                src={imagesList[activeImageIndex]} 
-                alt={product.title}
-                className="w-full h-full object-cover"
-              />
+            <div className="bg-white rounded-2xl border border-border aspect-video flex items-center justify-center overflow-hidden relative shadow-sm bg-black/5">
+              {isVideoUrl(imagesList[activeImageIndex]) ? (
+                <video 
+                  src={imagesList[activeImageIndex]} 
+                  className="w-full h-full object-contain" 
+                  controls 
+                  playsInline 
+                />
+              ) : (
+                <img 
+                  src={imagesList[activeImageIndex]} 
+                  alt={product.title}
+                  className="w-full h-full object-cover"
+                />
+              )}
             </div>
             
             {imagesList.length > 1 && (
               <div className="grid grid-cols-4 gap-4">
-                {imagesList.map((img, i) => (
-                  <div 
-                    key={i} 
-                    onClick={() => setActiveImageIndex(i)}
-                    className={`bg-white rounded-xl border ${i === activeImageIndex ? 'border-primary ring-2 ring-primary/20' : 'border-border'} aspect-square flex items-center justify-center overflow-hidden cursor-pointer shadow-sm`}
-                  >
-                    <img 
-                      src={img} 
-                      alt={`Thumbnail ${i}`}
-                      className="w-full h-full object-cover opacity-80 hover:opacity-100 transition-opacity"
-                    />
-                  </div>
-                ))}
+                {imagesList.map((img, i) => {
+                  const isVid = isVideoUrl(img);
+                  return (
+                    <div 
+                      key={i} 
+                      onClick={() => setActiveImageIndex(i)}
+                      className={`bg-white rounded-xl border ${i === activeImageIndex ? 'border-primary ring-2 ring-primary/20' : 'border-border'} aspect-square flex items-center justify-center overflow-hidden cursor-pointer shadow-sm bg-black/5 relative`}
+                    >
+                      {isVid ? (
+                        <div className="w-full h-full relative">
+                          <video 
+                            src={img} 
+                            className="w-full h-full object-cover opacity-80 hover:opacity-100 transition-opacity" 
+                            muted 
+                            playsInline 
+                          />
+                          <div className="absolute top-1 right-1 bg-black/75 text-white text-[8px] font-bold px-1.5 py-0.2 rounded scale-90">
+                            VIDEO
+                          </div>
+                        </div>
+                      ) : (
+                        <img 
+                          src={img} 
+                          alt={`Thumbnail ${i}`}
+                          className="w-full h-full object-cover opacity-80 hover:opacity-100 transition-opacity"
+                        />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 

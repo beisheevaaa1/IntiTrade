@@ -83,15 +83,95 @@ export function CreateListing() {
     }).catch(() => undefined);
   }, [navigate]);
 
-  // Real Image Upload
+  const convertPngToJpg = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Canvas context is not available"));
+            return;
+          }
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                const newFile = new File([blob], file.name.replace(/\.png$/i, ".jpg"), {
+                  type: "image/jpeg",
+                  lastModified: Date.now()
+                });
+                resolve(newFile);
+              } else {
+                reject(new Error("Canvas blob conversion failed"));
+              }
+            },
+            "image/jpeg",
+            0.92
+          );
+        };
+        img.onerror = () => reject(new Error("Failed to load image"));
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const isVideoFile = (file: File) => file.type.startsWith("video/");
+  const isImageFile = (file: File) => file.type.startsWith("image/");
+  const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes("video");
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      if (images.length >= 5) {
-        alert("Maximum of 5 images allowed");
+      let file = e.target.files[0];
+      
+      if (isVideoFile(file)) {
+        if (file.size > 100 * 1024 * 1024) {
+          alert("Video size must be less than 100MB");
+          return;
+        }
+      } else if (isImageFile(file)) {
+        const currentPhotosCount = images.filter(url => !isVideoUrl(url)).length;
+        if (currentPhotosCount >= 20) {
+          alert("Maximum of 20 photos allowed");
+          return;
+        }
+        
+        if (file.size > 5 * 1024 * 1024) {
+          if (file.type === "image/png") {
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            const confirmConvert = window.confirm(
+              `Your PNG image is larger than 5MB (${sizeMB}MB). Would you like to automatically convert it to an optimized JPG to upload successfully?`
+            );
+            if (confirmConvert) {
+              try {
+                file = await convertPngToJpg(file);
+              } catch (err) {
+                console.error("Conversion failed:", err);
+                alert("Failed to convert image. Please upload a smaller file.");
+                return;
+              }
+            } else {
+              alert("Photo size must be less than 5MB");
+              return;
+            }
+          } else {
+            alert("Photo size must be less than 5MB");
+            return;
+          }
+        }
+      } else {
+        alert("Only images and videos are allowed");
         return;
       }
       
-      const file = e.target.files[0];
       const formData = new FormData();
       formData.append("file", file);
 
@@ -105,7 +185,7 @@ export function CreateListing() {
         setImages([...images, res.data.url]);
       } catch (err: any) {
         console.error(err);
-        setError(err.response?.data?.message || "Failed to upload image. Please try again.");
+        setError(err.response?.data?.message || "Failed to upload file. Please try again.");
       } finally {
         setUploadingImage(false);
       }
@@ -209,41 +289,53 @@ export function CreateListing() {
           
           {/* Photos Section */}
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-4">Photos</h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">Media (Photos & Videos)</h2>
             <Card>
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground mb-4">
-                  Add up to 5 photos. The first photo will be your cover image. Use clear, bright photos for better results.
+                  Add up to 20 photos (under 5MB each) and videos (under 100MB). The first image will be your listing cover.
                 </p>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {images.map((img, index) => (
-                    <div key={index} className="relative aspect-square rounded-xl overflow-hidden group border border-border">
-                      <img src={mediaUrl(img)} alt={`Upload ${index + 1}`} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <Button 
-                          type="button" 
-                          variant="destructive" 
-                          size="icon" 
-                          className="h-8 w-8 rounded-full"
-                          onClick={() => removeImage(index)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {index === 0 && (
-                        <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded">
-                          COVER
+                  {images.map((img, index) => {
+                    const isVideo = isVideoUrl(img);
+                    return (
+                      <div key={index} className="relative aspect-square rounded-xl overflow-hidden group border border-border bg-black/5">
+                        {isVideo ? (
+                          <div className="w-full h-full relative">
+                            <video src={mediaUrl(img)} className="w-full h-full object-cover" muted playsInline />
+                            <div className="absolute top-2 right-2 bg-black/75 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                              VIDEO
+                            </div>
+                          </div>
+                        ) : (
+                          <img src={mediaUrl(img)} alt={`Upload ${index + 1}`} className="w-full h-full object-cover" />
+                        )}
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Button 
+                            type="button" 
+                            variant="destructive" 
+                            size="icon" 
+                            className="h-8 w-8 rounded-full"
+                            onClick={() => removeImage(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {index === 0 && !isVideo && (
+                          <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded">
+                            COVER
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   
-                  {images.length < 5 && (
+                  {images.length < 25 && (
                     <label className="relative aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-primary hover:bg-red-50/50 transition-colors flex flex-col items-center justify-center cursor-pointer">
                       <input 
                         type="file" 
-                        accept="image/*" 
+                        accept="image/*,video/*" 
                         className="hidden" 
                         disabled={uploadingImage}
                         onChange={handleImageUpload}
@@ -252,13 +344,13 @@ export function CreateListing() {
                         {uploadingImage ? (
                           <Loader2 className="h-5 w-5 text-gray-500 animate-spin" />
                         ) : (
-                          <ImageIcon className="h-5 w-5 text-gray-500" />
+                          <Upload className="h-5 w-5 text-gray-500" />
                         )}
                       </div>
                       <span className="text-sm font-medium text-gray-600">
-                        {uploadingImage ? "Uploading..." : "Add Photo"}
+                        {uploadingImage ? "Uploading..." : "Add Media"}
                       </span>
-                      <span className="text-xs text-gray-400 mt-1">{images.length}/5</span>
+                      <span className="text-xs text-gray-400 mt-1">{images.length}/25</span>
                     </label>
                   )}
                 </div>

@@ -73,9 +73,7 @@ export function AppLayout() {
       <header className="sticky top-0 z-50 w-full border-b border-border bg-white shadow-sm">
         <div className="container mx-auto px-4 h-20 flex items-center justify-between gap-6">
           <Link to="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-primary text-white flex items-center justify-center rounded-xl font-bold text-xl">
-              I
-            </div>
+            <img src="/assets/INTI-40.png" alt="INTI Logo" className="w-10 h-10 object-contain rounded-xl" />
             <span className="font-bold text-2xl text-foreground hidden lg:block">IntiTrade</span>
           </Link>
 
@@ -233,9 +231,7 @@ export function AppLayout() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-primary text-white flex items-center justify-center rounded-lg font-bold">
-                  I
-                </div>
+                <img src="/assets/INTI-40.png" alt="INTI Logo" className="w-8 h-8 object-contain rounded-lg" />
                 <span className="font-bold text-xl text-foreground">IntiTrade</span>
               </div>
               <p className="text-muted-foreground text-sm mb-4 leading-relaxed">
