@@ -90,6 +90,12 @@ model User {
   showEmail           Boolean                  @default(false)
   showCampusArea      Boolean                  @default(true)
   allowMessages       Boolean                  @default(true)
+  showAcademicProfile Boolean                  @default(false)
+  gpa                 Float?
+  academicGrades      String?
+  resume              String?
+  projects            String?
+  academicTipShown    Boolean                  @default(false)
   listings            Listing[]                @relation("SellerListings")
   favorites           Favorite[]
   buyerConversations  Conversation[]           @relation("BuyerConversations")

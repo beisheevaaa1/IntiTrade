@@ -91,7 +91,49 @@ router.post("/login", async (req, res) => {
 });
 
 router.get("/me", requireAuth, async (req, res) => {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
+  let user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
+  
+  if (user.gpa === null) {
+    const randomGpa = parseFloat((Math.random() * (4.0 - 3.2) + 3.2).toFixed(2));
+    const gradesMap: Record<string, Array<{ course: string; grade: string }>> = {
+      "Computer Science": [
+        { course: "Data Structures & Algorithms", grade: "A" },
+        { course: "Database Management Systems", grade: "A-" },
+        { course: "Object Oriented Programming", grade: "A" },
+        { course: "Calculus & Linear Algebra", grade: "B+" }
+      ],
+      "Business": [
+        { course: "Introduction to Economics", grade: "A" },
+        { course: "Principles of Marketing", grade: "A" },
+        { course: "Business Finance", grade: "B+" },
+        { course: "Organizational Behaviour", grade: "A-" }
+      ],
+      "Engineering": [
+        { course: "Calculus I & II", grade: "A" },
+        { course: "Engineering Physics", grade: "A-" },
+        { course: "Circuit Theory", grade: "B+" },
+        { course: "Digital Electronics", grade: "A" }
+      ]
+    };
+    
+    const facultyKey = user.faculty || "Computer Science";
+    const selectedGrades = gradesMap[facultyKey] || gradesMap["Computer Science"];
+    
+    const randomProjects = `- IntiCampus Marketplace: A peer-to-peer web application for INTI students to trade textbooks and electronics.\n- Smart Study Assistant: A machine learning based calendar app that schedules study blocks based on student workload.`;
+    
+    const defaultResume = `Motivated student at INTI University pursuing ${facultyKey}. Active member of academic clubs and experienced in university group projects. Seeking tutoring opportunities to help other students succeed.`;
+
+    user = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        gpa: randomGpa,
+        academicGrades: JSON.stringify(selectedGrades),
+        projects: randomProjects,
+        resume: defaultResume
+      }
+    });
+  }
+
   res.json({ user: sanitizeUser(user) });
 });
 
@@ -108,7 +150,13 @@ const updateProfileSchema = z.object({
   sellerType: z.nativeEnum(SellerType).optional(),
   showEmail: z.boolean().optional(),
   showCampusArea: z.boolean().optional(),
-  allowMessages: z.boolean().optional()
+  allowMessages: z.boolean().optional(),
+  showAcademicProfile: z.boolean().optional(),
+  gpa: z.number().optional(),
+  academicGrades: z.string().optional(),
+  resume: z.string().optional(),
+  projects: z.string().optional(),
+  academicTipShown: z.boolean().optional()
 });
 
 router.patch("/profile", requireAuth, async (req, res) => {

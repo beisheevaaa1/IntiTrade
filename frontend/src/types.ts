@@ -27,6 +27,12 @@ export type User = {
   allowMessages?: boolean;
   rating?: number;
   ratingCount?: number;
+  showAcademicProfile?: boolean;
+  gpa?: number | null;
+  academicGrades?: string | null;
+  resume?: string | null;
+  projects?: string | null;
+  academicTipShown?: boolean;
 };
 
 export type Category = {
@@ -67,7 +73,7 @@ export type Listing = {
   sellerId: string;
   categoryId: string;
   createdAt: string;
-  seller: Pick<User, "id" | "name" | "email" | "faculty" | "campusArea" | "avatarUrl" | "sellerType" | "rating" | "ratingCount"> & { isVerified?: boolean };
+  seller: Pick<User, "id" | "name" | "email" | "faculty" | "campusArea" | "avatarUrl" | "sellerType" | "rating" | "ratingCount" | "showAcademicProfile" | "gpa" | "academicGrades" | "resume" | "projects"> & { isVerified?: boolean };
   category: Category;
   images: ListingImage[];
   _count?: { favorites: number; reports: number };

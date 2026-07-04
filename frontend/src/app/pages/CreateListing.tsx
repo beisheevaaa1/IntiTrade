@@ -32,7 +32,7 @@ const locationsList = [
 
 export function CreateListing() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, reloadUser, updateUser } = useAuth();
   
   // Form states
   const [title, setTitle] = useState("");
@@ -63,6 +63,34 @@ export function CreateListing() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [error, setError] = useState("");
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [hideTipLocal, setHideTipLocal] = useState(false);
+
+  const handleEnableAcademicTip = async () => {
+    try {
+      await api.patch("/auth/profile", {
+        showAcademicProfile: true,
+        academicTipShown: true
+      });
+      updateUser({ showAcademicProfile: true, academicTipShown: true });
+      setHideTipLocal(true);
+      alert("Academic Portfolio enabled successfully! You can customize your resume and projects in Settings.");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to enable academic profile.");
+    }
+  };
+
+  const handleDismissAcademicTip = async () => {
+    try {
+      await api.patch("/auth/profile", {
+        academicTipShown: true
+      });
+      updateUser({ academicTipShown: true });
+      setHideTipLocal(true);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     if (localStorage.getItem("isLoggedIn") !== "true") {
@@ -279,6 +307,28 @@ export function CreateListing() {
       </header>
 
       <main className="container mx-auto px-4 py-8 max-w-3xl">
+        {/* Academic Profile Recommendation Tip */}
+        {(type === "COURSE" || type === "SERVICE") && !user?.showAcademicProfile && !user?.academicTipShown && !hideTipLocal && (
+          <div className="bg-gradient-to-r from-amber-50 to-amber-100/50 p-5 rounded-2xl border-2 border-amber-200 mb-6 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h4 className="font-extrabold text-amber-900 text-sm flex items-center gap-1.5">
+                <span>💡</span> Boost Your Course Sales!
+              </h4>
+              <p className="text-xs text-amber-800 leading-relaxed max-w-xl">
+                Сделайте ваш академический профиль (GPA и успеваемость) публичным. Это подтвердит вашу экспертизу перед студентами, повысит доверие к вашим курсам и увеличит продажи!
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0 w-full sm:w-auto justify-end">
+              <Button type="button" variant="outline" size="sm" onClick={handleDismissAcademicTip} className="bg-white hover:bg-gray-50 text-xs border-amber-300 text-amber-950 font-bold">
+                Dismiss
+              </Button>
+              <Button type="button" size="sm" onClick={handleEnableAcademicTip} className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold">
+                Enable Public Profile
+              </Button>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="bg-red-50 text-red-600 p-4 rounded-xl border border-red-100 mb-6 text-center">
             {error}

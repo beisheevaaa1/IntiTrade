@@ -69,6 +69,9 @@ export function Inbox() {
   
   // Privacy Settings State
   const [showOnlineStatus, setShowOnlineStatus] = useState(user?.showOnlineStatus !== false);
+  const [showAcademicProfile, setShowAcademicProfile] = useState(user?.showAcademicProfile || false);
+  const [resumeText, setResumeText] = useState(user?.resume || "");
+  const [projectsText, setProjectsText] = useState(user?.projects || "");
 
   // Personalization Theme State
   const [themeColor, setThemeColor] = useState(() => localStorage.getItem("theme_color") || "#e11d48");
@@ -415,7 +418,10 @@ export function Inbox() {
         autoReplyEnabled,
         autoReplyMessage,
         autoReplyDelay,
-        showOnlineStatus
+        showOnlineStatus,
+        showAcademicProfile,
+        resume: resumeText,
+        projects: projectsText
       });
       await reloadUser();
       setShowSettingsModal(false);
@@ -974,7 +980,7 @@ export function Inbox() {
                 </div>
               )}
 
-              {/* TAB 2: Privacy */}
+              {/* TAB 2: Privacy & Academic Portfolio */}
               {settingsTab === "privacy" && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-border">
@@ -990,6 +996,55 @@ export function Inbox() {
                       className="w-5 h-5 text-primary focus:ring-primary border-gray-300 rounded"
                     />
                   </div>
+
+                  <div className="border-t border-border pt-4">
+                    <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-border">
+                      <div>
+                        <label htmlFor="academic-status-toggle" className="font-bold text-sm text-gray-900 block">Show Academic Profile & Portfolio</label>
+                        <span className="text-[10px] text-muted-foreground">Share your GPA, verified grades, projects, and resume on your shop/courses listings.</span>
+                      </div>
+                      <input
+                        id="academic-status-toggle"
+                        type="checkbox"
+                        checked={showAcademicProfile}
+                        onChange={(e) => setShowAcademicProfile(e.target.checked)}
+                        className="w-5 h-5 text-primary focus:ring-primary border-gray-300 rounded"
+                      />
+                    </div>
+                  </div>
+
+                  {showAcademicProfile && (
+                    <div className="space-y-4 pt-2">
+                      <div className="bg-amber-50 text-amber-800 text-xs p-3 rounded-xl border border-amber-100 flex items-center gap-2">
+                        <span>🎓</span>
+                        <span>ваши оценки и GPA {user?.gpa ? `(${user.gpa})` : ""} автоматически верифицированы через данные студенческого Google аккаунта.</span>
+                      </div>
+                      
+                      <div>
+                        <label htmlFor="resume-input" className="block text-sm font-semibold text-gray-700 mb-1">Resume / About Me</label>
+                        <textarea
+                          id="resume-input"
+                          rows={3}
+                          value={resumeText}
+                          onChange={(e) => setResumeText(e.target.value)}
+                          placeholder="Introduce your academic background, experience or tutor achievements..."
+                          className="w-full rounded-xl border border-border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-gray-800"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="projects-input" className="block text-sm font-semibold text-gray-700 mb-1">Projects (one per line or description)</label>
+                        <textarea
+                          id="projects-input"
+                          rows={3}
+                          value={projectsText}
+                          onChange={(e) => setProjectsText(e.target.value)}
+                          placeholder="e.g. - My Calculus Tutor Bot: A Telegram chatbot resolving math tasks..."
+                          className="w-full rounded-xl border border-border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary text-gray-800"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

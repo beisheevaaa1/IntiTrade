@@ -19,6 +19,11 @@ const listingInclude = Prisma.validator<Prisma.ListingInclude>()({
       showCampusArea: true,
       avatarUrl: true,
       sellerType: true,
+      showAcademicProfile: true,
+      gpa: true,
+      academicGrades: true,
+      resume: true,
+      projects: true,
       reviewsReceived: { select: { rating: true } }
     }
   },
@@ -35,12 +40,19 @@ function presentListing(listing: ListingPayload) {
   const rating = reviewsReceived.length
     ? reviewsReceived.reduce((sum, review) => sum + review.rating, 0) / reviewsReceived.length
     : 0;
+
+  const showAcademic = seller.showAcademicProfile;
+
   return {
     ...listing,
     seller: {
       ...seller,
       email: showEmail ? email : undefined,
       campusArea: showCampusArea ? campusArea : undefined,
+      gpa: showAcademic ? seller.gpa : undefined,
+      academicGrades: showAcademic ? seller.academicGrades : undefined,
+      resume: showAcademic ? seller.resume : undefined,
+      projects: showAcademic ? seller.projects : undefined,
       rating,
       ratingCount: reviewsReceived.length
     }

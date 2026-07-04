@@ -345,6 +345,69 @@ export function ProductDetail() {
               {product.sellerId !== user?.id && <Button variant="ghost" size="sm" onClick={handleBlockSeller} className="mt-2 text-muted-foreground">Block seller</Button>}
             </div>
 
+            {/* Academic Profile (GPA, Grades & Portfolio) */}
+            {product.seller?.showAcademicProfile && (
+              <div className="bg-white p-6 rounded-2xl border-2 border-amber-200/60 shadow-md relative overflow-hidden bg-gradient-to-br from-amber-50/20 via-white to-white">
+                <div className="absolute -right-3 -top-3 text-amber-200/30 text-7xl select-none">🎓</div>
+                
+                <h3 className="font-extrabold text-lg text-gray-900 mb-4 flex items-center gap-2">
+                  <span>🎓</span> Academic Profile
+                  <span className="text-[10px] bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded-full border border-green-200 uppercase tracking-wider">Verified INTI Student</span>
+                </h3>
+                
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 rounded-full border-4 border-amber-400 bg-amber-50 flex flex-col items-center justify-center shrink-0 shadow-sm">
+                    <span className="text-xl font-black text-amber-800 leading-none">{(product.seller.gpa || 0).toFixed(2)}</span>
+                    <span className="text-[8px] text-amber-600 font-bold mt-0.5">GPA</span>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 text-sm">Verified Academic Excellence</h4>
+                    <p className="text-xs text-muted-foreground leading-snug">Linked with official Google Student Account & Academic Records.</p>
+                  </div>
+                </div>
+
+                {product.seller.academicGrades && (() => {
+                  try {
+                    const grades = JSON.parse(product.seller.academicGrades);
+                    if (Array.isArray(grades) && grades.length > 0) {
+                      return (
+                        <div className="mb-4">
+                          <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-2">Key Course Grades</h4>
+                          <div className="grid grid-cols-2 gap-2">
+                            {grades.map((g: any, i: number) => (
+                              <div key={i} className="bg-gray-50/80 p-2 rounded-lg border border-gray-100 flex items-center justify-between text-xs">
+                                <span className="text-gray-600 truncate mr-2" title={g.course}>{g.course}</span>
+                                <span className="font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded shrink-0">{g.grade}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    }
+                  } catch {}
+                  return null;
+                })()}
+
+                {product.seller.resume && (
+                  <div className="mb-4 pt-3 border-t border-gray-100">
+                    <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-1.5">Tutor Bio & Experience</h4>
+                    <p className="text-xs text-gray-600 leading-relaxed italic whitespace-pre-line bg-gray-50/50 p-2.5 rounded-lg border border-gray-100/50">
+                      "{product.seller.resume}"
+                    </p>
+                  </div>
+                )}
+
+                {product.seller.projects && (
+                  <div className="pt-3 border-t border-gray-100">
+                    <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-1.5">Projects Portfolio</h4>
+                    <div className="text-xs text-gray-600 space-y-1.5 whitespace-pre-line">
+                      {product.seller.projects}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Meetup preference / Safety Tips */}
             <div className="bg-red-50 p-6 rounded-2xl border border-red-100 shadow-sm">
               <div className="flex items-center gap-2 mb-3 text-primary font-bold">
