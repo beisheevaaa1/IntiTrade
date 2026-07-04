@@ -102,6 +102,7 @@ export function Dashboard() {
   const rejectedListings = listings.filter(l => l.status === "REJECTED");
   const soldListings = listings.filter(l => l.status === "SOLD");
   const totalViews = listings.reduce((sum, item) => sum + (item.viewsCount || 0), 0);
+  const totalInterests = listings.reduce((sum, item) => sum + (item.interestCount || 0), 0);
 
   if (loading) {
     return (
@@ -169,7 +170,7 @@ export function Dashboard() {
         </div>
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <Card className="shadow-sm border-transparent bg-white">
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
@@ -208,6 +209,20 @@ export function Dashboard() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Total Views</p>
                 <h3 className="text-3xl font-bold text-foreground">{totalViews}</h3>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm border-transparent bg-white">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center">
+                  <MessageSquare className="h-5 w-5 text-green-600" />
+                </div>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-muted-foreground">Interested Buyers</p>
+                <h3 className="text-3xl font-bold text-foreground">{totalInterests}</h3>
               </div>
             </CardContent>
           </Card>
@@ -270,8 +285,9 @@ export function Dashboard() {
                           </div>
                         )}
                         
-                        <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1"><Eye className="w-3 h-3"/> {item.viewsCount || 0} views</span>
+                        <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                          <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5 text-purple-600"/> {item.viewsCount || 0} views</span>
+                          <span className="flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5 text-green-600"/> {item.interestCount || 0} interested</span>
                         </div>
                       </div>
                       

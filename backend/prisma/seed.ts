@@ -169,29 +169,81 @@ async function main() {
     }
   });
 
-  console.log("Seeding 10 student accounts...");
+  console.log("Seeding 10 student accounts with academic profiles...");
   const studentPassword = await bcrypt.hash("12345678", 12);
   const students = [];
-  const faculties = ["Faculty of Business", "Faculty of Engineering", "Faculty of IT", "Faculty of Science", "Faculty of Art"];
   const campusAreas = ["Block A Residence", "Block B Residence", "Hostel Block C", "Off-campus Apartment", "Taman Metropolitan"];
 
-  for (let i = 1; i <= 10; i++) {
-    const paddedId = String(i).padStart(6, "0");
-    const email = `inti_i${paddedId}@student.newinti.edu.my`;
-    const name = `Student ${i}`;
-    
+  const mockStudents = [
+    { name: "Daniel Tan", faculty: "Faculty of IT", email: "inti_i000001@student.newinti.edu.my", gpa: 3.85, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150&h=150&fit=crop&q=80" },
+    { name: "Sarah Lim", faculty: "Faculty of Business", email: "inti_i000002@student.newinti.edu.my", gpa: 3.92, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop&q=80" },
+    { name: "Adil Khan", faculty: "Faculty of Engineering", email: "inti_i000003@student.newinti.edu.my", gpa: 3.65, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&q=80" },
+    { name: "Priya Sharma", faculty: "Faculty of Science", email: "inti_i000004@student.newinti.edu.my", gpa: 3.78, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&q=80" },
+    { name: "Marcus Wong", faculty: "Faculty of IT", email: "inti_i000005@student.newinti.edu.my", gpa: 3.42, showAcademicProfile: false, avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&q=80" },
+    { name: "Aisha Yusuf", faculty: "Faculty of Art", email: "inti_i000006@student.newinti.edu.my", gpa: 3.58, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&h=150&fit=crop&q=80" },
+    { name: "Kevin Matthews", faculty: "Faculty of Engineering", email: "inti_i000007@student.newinti.edu.my", gpa: 3.25, showAcademicProfile: false, avatarUrl: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=150&h=150&fit=crop&q=80" },
+    { name: "Chloe Dupont", faculty: "Faculty of Art", email: "inti_i000008@student.newinti.edu.my", gpa: 3.71, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&h=150&fit=crop&q=80" },
+    { name: "Ryu Tanaka", faculty: "Faculty of Science", email: "inti_i000009@student.newinti.edu.my", gpa: 3.90, showAcademicProfile: true, avatarUrl: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&h=150&fit=crop&q=80" },
+    { name: "Emily Clark", faculty: "Faculty of Business", email: "inti_i000010@student.newinti.edu.my", gpa: 3.49, showAcademicProfile: false, avatarUrl: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&h=150&fit=crop&q=80" }
+  ];
+
+  const gradesMap: Record<string, Array<{ course: string; grade: string }>> = {
+    "Faculty of IT": [
+      { course: "Data Structures & Algorithms", grade: "A" },
+      { course: "Database Management Systems", grade: "A-" },
+      { course: "Object Oriented Programming", grade: "A" },
+      { course: "Calculus & Linear Algebra", grade: "B+" }
+    ],
+    "Faculty of Business": [
+      { course: "Introduction to Economics", grade: "A" },
+      { course: "Principles of Marketing", grade: "A" },
+      { course: "Business Finance", grade: "B+" },
+      { course: "Organizational Behaviour", grade: "A-" }
+    ],
+    "Faculty of Engineering": [
+      { course: "Calculus I & II", grade: "A" },
+      { course: "Engineering Physics", grade: "A-" },
+      { course: "Circuit Theory", grade: "B+" },
+      { course: "Digital Electronics", grade: "A" }
+    ],
+    "Faculty of Science": [
+      { course: "Organic Chemistry", grade: "A" },
+      { course: "Statistical Methods", grade: "A-" },
+      { course: "General Biology", grade: "B+" },
+      { course: "Scientific Writing", grade: "A" }
+    ],
+    "Faculty of Art": [
+      { course: "Digital Illustration", grade: "A" },
+      { course: "History of Modern Art", grade: "A" },
+      { course: "Color Theory & Design", grade: "B+" },
+      { course: "Portfolio Development", grade: "A-" }
+    ]
+  };
+
+  for (let i = 0; i < mockStudents.length; i++) {
+    const mock = mockStudents[i];
+    const userGrades = gradesMap[mock.faculty] || gradesMap["Faculty of IT"];
+    const projectsText = `- Course Grade Tracker: Web dashboard resolving student GPA and course completion timelines.\n- Campus Event Planner: A collaborative calendar system for managing student club schedules.`;
+    const resumeText = `Dedicated ${mock.faculty} student at INTI University. Experienced in academic projects and team leadership. Eager to tutor and share materials with fellow students.`;
+
     const user = await prisma.user.create({
       data: {
-        email,
-        name,
+        email: mock.email,
+        name: mock.name,
         passwordHash: studentPassword,
         role: Role.STUDENT,
         isVerified: true,
-        faculty: faculties[i % faculties.length],
+        faculty: mock.faculty,
         campusArea: campusAreas[i % campusAreas.length],
-        bio: `Hi, I am Student ${i} from INTI. Let's trade safely!`,
-        avatarUrl: `https://images.unsplash.com/photo-${1500000000000 + i * 10000}?w=150&h=150&fit=crop&q=80`,
-        sellerType: i % 5 === 0 ? SellerType.SHOP : templateSellerType(i)
+        bio: `Hi, I am ${mock.name} from INTI. Let's trade safely!`,
+        avatarUrl: mock.avatarUrl,
+        sellerType: i % 5 === 0 ? SellerType.SHOP : templateSellerType(i),
+        gpa: mock.gpa,
+        showAcademicProfile: mock.showAcademicProfile,
+        academicGrades: JSON.stringify(userGrades),
+        projects: projectsText,
+        resume: resumeText,
+        academicTipShown: true
       }
     });
     students.push(user);
@@ -231,7 +283,8 @@ async function main() {
           sellerId: student.id,
           categoryId: dbCategories[template.categorySlug],
           isNegotiable: sIdx % 2 === 0,
-          viewsCount: Math.floor(Math.random() * 80) + 5,
+          viewsCount: Math.floor(Math.random() * 80) + 15,
+          interestCount: Math.floor(Math.random() * 8) + 1,
           rejectionReason: status === ListingStatus.REJECTED ? "This type of service is not permitted inside campus dormitories." : null
         }
       });

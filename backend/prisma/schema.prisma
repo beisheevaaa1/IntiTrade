@@ -140,6 +140,7 @@ model Listing {
   location         String
   rejectionReason  String?
   viewsCount       Int              @default(0)
+  interestCount    Int              @default(0)
   isNegotiable     Boolean          @default(false)
   meetupPreference String?
   meetupPointId    String?

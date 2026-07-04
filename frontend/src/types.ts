@@ -57,6 +57,7 @@ export type Listing = {
   location: string;
   rejectionReason?: string | null;
   viewsCount?: number;
+  interestCount?: number;
   isNegotiable?: boolean;
   meetupPreference?: string | null;
   meetupPointId?: string | null;

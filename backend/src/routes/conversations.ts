@@ -55,6 +55,17 @@ router.post("/", requireAuth, async (req, res) => {
   });
   if (blocked) return res.status(403).json({ message: "Messaging is unavailable between these accounts" });
 
+  const existingConv = await prisma.conversation.findUnique({
+    where: { listingId_buyerId_sellerId: { listingId: listing.id, buyerId: req.user!.id, sellerId: listing.sellerId } }
+  });
+
+  if (!existingConv) {
+    void prisma.listing.update({
+      where: { id: listing.id },
+      data: { interestCount: { increment: 1 } }
+    }).catch(() => undefined);
+  }
+
   const conversation = await prisma.conversation.upsert({
     where: { listingId_buyerId_sellerId: { listingId: listing.id, buyerId: req.user!.id, sellerId: listing.sellerId } },
     update: {},
