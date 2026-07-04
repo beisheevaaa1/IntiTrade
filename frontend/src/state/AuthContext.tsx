@@ -11,6 +11,7 @@ type AuthContextValue = {
   verifyEmail: (token: string) => Promise<void>;
   logout: () => void;
   updateUser: (updated: Partial<User>) => void;
+  reloadUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -68,6 +69,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     updateUser(updated) {
       setUser((prev) => (prev ? { ...prev, ...updated } : null));
+    },
+    async reloadUser() {
+      const response = await api.get("/auth/me");
+      setUser(response.data.user);
     }
   }), [loading, token, user]);
 

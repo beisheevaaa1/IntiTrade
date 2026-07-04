@@ -1,16 +1,36 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Outlet, Link, useNavigate } from "react-router";
-import { Search, Bell, MessageSquare, Heart, MapPin, LogOut, PlusCircle, User } from "lucide-react";
+import { Search, Bell, MessageSquare, Heart, MapPin, LogOut, PlusCircle, Megaphone } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useAuth } from "../../state/AuthContext";
-import { mediaUrl } from "../../api/client";
+import { api, mediaUrl } from "../../api/client";
 
 export function AppLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadMessages, setUnreadMessages] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  useEffect(() => {
+    if (!user) { setNotifications([]); setUnreadMessages(0); return; }
+    void Promise.all([api.get("/community/notifications"), api.get("/conversations")]).then(([notificationResponse, conversationResponse]) => {
+      setNotifications(notificationResponse.data.notifications || []);
+      const unread = (conversationResponse.data.conversations || []).flatMap((conversation: any) => conversation.messages || []).filter((message: any) => !message.readAt && message.sender?.id !== user.id).length;
+      setUnreadMessages(unread);
+    }).catch(() => undefined);
+  }, [user?.id]);
+
+  const openNotifications = async () => {
+    setShowNotifications((value) => !value);
+    if (notifications.some((notification) => !notification.readAt)) {
+      await api.patch("/community/notifications/read");
+      setNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt || new Date().toISOString() })));
+    }
+  };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +48,7 @@ export function AppLayout() {
             <div className="w-10 h-10 bg-primary text-white flex items-center justify-center rounded-xl font-bold text-xl">
               I
             </div>
-            <span className="font-bold text-2xl text-foreground hidden sm:block">IntiTrade</span>
+            <span className="font-bold text-2xl text-foreground hidden lg:block">IntiTrade</span>
           </Link>
 
           <form onSubmit={handleSearchSubmit} className="flex-1 max-w-2xl hidden md:flex items-center relative">
@@ -39,13 +59,13 @@ export function AppLayout() {
               className="w-full rounded-full pl-12 h-12 bg-gray-50 border-gray-200"
             />
             <Search className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-            <Button type="submit" className="absolute right-1 top-1 h-10 rounded-full px-6">
-              Search
+            <Button type="submit" className="absolute right-1 top-1 h-10 rounded-full px-4">
+              Go
             </Button>
           </form>
 
           <div className="flex items-center gap-2 sm:gap-4">
-            <div className="hidden lg:flex items-center text-sm text-muted-foreground mr-2 font-medium">
+            <div className="hidden 2xl:flex items-center text-sm text-muted-foreground mr-2 font-medium">
               <MapPin className="h-4 w-4 mr-1" />
               INTI International University
             </div>
@@ -56,11 +76,22 @@ export function AppLayout() {
             
             <Button variant="ghost" size="icon" className="relative text-foreground" onClick={() => navigate('/inbox')}>
               <MessageSquare className="h-5 w-5" />
-              {user && <span className="absolute top-2 right-2 w-2 h-2 bg-primary rounded-full"></span>}
+              {unreadMessages > 0 && <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-primary text-white text-[10px] rounded-full flex items-center justify-center">{unreadMessages}</span>}
             </Button>
             
-            <Button variant="ghost" size="icon" className="relative text-foreground">
-              <Bell className="h-5 w-5" />
+            <div className="relative">
+              <Button variant="ghost" size="icon" className="relative text-foreground" onClick={openNotifications}>
+                <Bell className="h-5 w-5" />
+                {notifications.some((notification) => !notification.readAt) && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />}
+              </Button>
+              {showNotifications && <div className="absolute right-0 top-12 w-80 max-w-[80vw] bg-white border border-border shadow-xl rounded-2xl p-3 z-50">
+                <p className="font-bold px-2 py-2">Notifications</p>
+                {notifications.length === 0 ? <p className="text-sm text-muted-foreground px-2 py-5 text-center">No notifications yet.</p> : notifications.slice(0, 8).map((notification) => <div key={notification.id} className="p-3 border-t text-sm"><p className="font-medium">{notification.type === "RESERVATION_CREATED" ? "New reservation or booking" : notification.type.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground mt-1">{new Date(notification.createdAt).toLocaleString()}</p></div>)}
+              </div>}
+            </div>
+
+            <Button variant="ghost" size="icon" className="relative text-foreground" onClick={() => navigate('/announcements')} title="Campus announcements">
+              <Megaphone className="h-5 w-5" />
             </Button>
 
             <div className="h-8 w-px bg-border mx-1 hidden sm:block"></div>
@@ -175,6 +206,7 @@ export function AppLayout() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><Link to="#" className="hover:text-primary transition-colors">Help Centre</Link></li>
                 <li><Link to="#" className="hover:text-primary transition-colors">Contact Us</Link></li>
+                <li><Link to="/announcements" className="hover:text-primary transition-colors">Campus announcements</Link></li>
               </ul>
             </div>
           </div>

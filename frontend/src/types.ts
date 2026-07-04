@@ -1,5 +1,6 @@
 export type Role = "STUDENT" | "ADMIN";
-export type ListingType = "PRODUCT" | "SERVICE";
+export type SellerType = "CASUAL" | "SHOP" | "SERVICE_PROVIDER";
+export type ListingType = "PRODUCT" | "SERVICE" | "COURSE";
 export type ListingCondition = "NEW" | "LIKE_NEW" | "GOOD" | "FAIR" | "NOT_APPLICABLE";
 export type ListingStatus = "PENDING" | "ACTIVE" | "SOLD" | "ARCHIVED" | "REJECTED";
 export type ReportStatus = "OPEN" | "REVIEWED" | "DISMISSED" | "ACTIONED";
@@ -20,6 +21,12 @@ export type User = {
   autoReplyDelay?: number;
   lastActiveAt?: string;
   showOnlineStatus?: boolean;
+  sellerType?: SellerType;
+  showEmail?: boolean;
+  showCampusArea?: boolean;
+  allowMessages?: boolean;
+  rating?: number;
+  ratingCount?: number;
 };
 
 export type Category = {
@@ -46,10 +53,21 @@ export type Listing = {
   viewsCount?: number;
   isNegotiable?: boolean;
   meetupPreference?: string | null;
+  meetupPointId?: string | null;
+  meetupPoint?: MeetupPoint | null;
+  quantity?: number;
+  isRecurring?: boolean;
+  isbn?: string | null;
+  author?: string | null;
+  edition?: string | null;
+  courseCode?: string | null;
+  serviceDuration?: number | null;
+  pricingUnit?: "ITEM" | "HOUR" | "SESSION" | "COURSE" | null;
+  availabilityNote?: string | null;
   sellerId: string;
   categoryId: string;
   createdAt: string;
-  seller: Pick<User, "id" | "name" | "email" | "faculty" | "campusArea" | "avatarUrl">;
+  seller: Pick<User, "id" | "name" | "email" | "faculty" | "campusArea" | "avatarUrl" | "sellerType" | "rating" | "ratingCount"> & { isVerified?: boolean };
   category: Category;
   images: ListingImage[];
   _count?: { favorites: number; reports: number };
@@ -62,10 +80,14 @@ export type Message = {
   sender: Pick<User, "id" | "name">;
   senderId?: string;
   readAt?: string | null;
+  attachmentUrl?: string | null;
+  offerAmount?: string | null;
 };
 
 export type Conversation = {
   id: string;
+  buyerId: string;
+  sellerId: string;
   listing: Listing;
   buyer: Pick<User, "id" | "name">;
   seller: Pick<User, "id" | "name">;
@@ -98,8 +120,47 @@ export type Transaction = {
   buyerId: string;
   sellerId: string;
   price: string;
+  quantity: number;
+  status: "RESERVED" | "COMPLETED" | "CANCELLED" | "DISPUTED";
+  meetupPoint?: MeetupPoint | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
+  disputeReason?: string | null;
+  review?: Review | null;
   createdAt: string;
   listing?: Pick<Listing, "id" | "title" | "price">;
   buyer?: Pick<User, "id" | "name" | "email">;
   seller?: Pick<User, "id" | "name" | "email">;
+};
+
+export type Review = {
+  id: string;
+  transactionId: string;
+  reviewerId: string;
+  revieweeId: string;
+  rating: number;
+  comment?: string | null;
+  createdAt: string;
+  reviewer?: Pick<User, "id" | "name" | "avatarUrl">;
+};
+
+export type MeetupPoint = {
+  id: string;
+  name: string;
+  description?: string | null;
+  campusArea?: string | null;
+};
+
+export type Announcement = {
+  id: string;
+  title: string;
+  body: string;
+  imageUrl?: string | null;
+  location?: string | null;
+  eventDate?: string | null;
+  expiresAt?: string | null;
+  status: "PENDING" | "ACTIVE" | "REJECTED" | "EXPIRED";
+  rejectionReason?: string | null;
+  author?: Pick<User, "id" | "name" | "avatarUrl" | "faculty">;
+  createdAt: string;
 };

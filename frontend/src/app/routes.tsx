@@ -12,6 +12,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { WantAds } from "./pages/WantAds";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminLogin } from "./pages/AdminLogin";
+import { Announcements } from "./pages/Announcements";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 function Placeholder({ title }: { title: string }) {
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
       { path: "browse", Component: BrowseListings },
       { path: "product/:id", Component: ProductDetail },
       { path: "want-ads", Component: WantAds },
+      { path: "announcements", Component: Announcements },
       { path: "verify-email", Component: VerifyEmail },
       
       // Protected Routes

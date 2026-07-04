@@ -10,7 +10,7 @@ router.get("/", requireAuth, async (req, res) => {
     include: {
       listing: {
         include: {
-          seller: { select: { id: true, name: true, email: true } },
+          seller: { select: { id: true, name: true, avatarUrl: true, sellerType: true } },
           category: true,
           images: true
         }

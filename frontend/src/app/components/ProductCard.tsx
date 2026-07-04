@@ -46,6 +46,9 @@ export function ProductCard({ product }: ProductCardProps) {
           {product.condition === "NEW" && (
             <Badge className="bg-primary text-white shadow-sm border-none font-bold">NEW</Badge>
           )}
+          {product.type !== "PRODUCT" && (
+            <Badge className="bg-white/95 text-gray-900 shadow-sm border-none font-bold">{product.type === "COURSE" ? "COURSE" : "SERVICE"}</Badge>
+          )}
         </div>
       </Link>
 
@@ -68,6 +71,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <Badge variant="secondary" className="bg-gray-100 text-gray-700 font-medium text-[11px] px-2 py-0.5 rounded-md">
             {product.category?.name || "Other"}
           </Badge>
+          {product.type === "PRODUCT" && (product.quantity ?? 1) > 1 && <Badge variant="outline" className="text-[11px]">{product.quantity} available</Badge>}
         </div>
       </CardContent>
 
@@ -89,6 +93,11 @@ export function ProductCard({ product }: ProductCardProps) {
               {product.seller?.campusArea && (
                 <span className="text-[11px] text-muted-foreground truncate ml-1">• {product.seller.campusArea}</span>
               )}
+            </div>
+            <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-700">
+              <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+              <span>{product.seller?.rating?.toFixed(1) || "New"}</span>
+              <span className="text-muted-foreground">· {product.seller?.sellerType === "SHOP" ? "Campus shop" : product.seller?.sellerType === "SERVICE_PROVIDER" ? "Provider" : "Casual seller"}</span>
             </div>
           </div>
         </div>

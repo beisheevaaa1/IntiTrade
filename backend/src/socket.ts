@@ -13,11 +13,14 @@ export function attachSocket(server: Server) {
   });
   ioInstance = io;
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token || typeof token !== "string") return next(new Error("Authentication required"));
     try {
-      socket.data.user = verifyAccessToken(token);
+      const payload = verifyAccessToken(token);
+      const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id: true, role: true, isBlocked: true } });
+      if (!user || user.isBlocked) return next(new Error("Account is unavailable"));
+      socket.data.user = { id: user.id, role: user.role };
       next();
     } catch {
       next(new Error("Invalid token"));
@@ -33,18 +36,28 @@ export function attachSocket(server: Server) {
       if (conversation) socket.join(conversationId);
     });
 
-    socket.on("message:send", async (payload: { conversationId: string; body: string }, callback?: (response: unknown) => void) => {
+    socket.on("message:send", async (payload: { conversationId: string; body?: string; attachmentUrl?: string; offerAmount?: number }, callback?: (response: unknown) => void) => {
       const userId = socket.data.user.id as string;
       const conversation = await prisma.conversation.findFirst({
         where: { id: payload.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }
       });
-      if (!conversation || !payload.body?.trim()) {
+      const body = payload.body?.trim() ?? "";
+      if (!conversation || body.length > 1200 || (!body && !payload.attachmentUrl && !payload.offerAmount)) {
         callback?.({ ok: false, message: "Message rejected" });
         return;
       }
+      const otherUserId = conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId;
+      const blocked = await prisma.userBlock.findFirst({ where: { OR: [{ blockerId: userId, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: userId }] } });
+      if (blocked) return callback?.({ ok: false, message: "Messaging is unavailable" });
 
       const message = await prisma.message.create({
-        data: { conversationId: conversation.id, senderId: userId, body: payload.body.trim() },
+        data: {
+          conversationId: conversation.id,
+          senderId: userId,
+          body,
+          attachmentUrl: payload.attachmentUrl?.slice(0, 500),
+          offerAmount: payload.offerAmount && payload.offerAmount > 0 ? payload.offerAmount : undefined
+        },
         include: { sender: { select: { id: true, name: true } } }
       });
       await prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
@@ -56,8 +69,10 @@ export function attachSocket(server: Server) {
       handleAutoReply(conversation.id, userId);
     });
 
-    socket.on("typing:start", (payload: { conversationId: string }) => {
+    socket.on("typing:start", async (payload: { conversationId: string }) => {
       const userId = socket.data.user.id as string;
+      const conversation = await prisma.conversation.findFirst({ where: { id: payload.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }, select: { id: true } });
+      if (!conversation) return;
       socket.to(payload.conversationId).emit("typing:status", {
         conversationId: payload.conversationId,
         userId,
@@ -65,8 +80,10 @@ export function attachSocket(server: Server) {
       });
     });
 
-    socket.on("typing:stop", (payload: { conversationId: string }) => {
+    socket.on("typing:stop", async (payload: { conversationId: string }) => {
       const userId = socket.data.user.id as string;
+      const conversation = await prisma.conversation.findFirst({ where: { id: payload.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }, select: { id: true } });
+      if (!conversation) return;
       socket.to(payload.conversationId).emit("typing:status", {
         conversationId: payload.conversationId,
         userId,

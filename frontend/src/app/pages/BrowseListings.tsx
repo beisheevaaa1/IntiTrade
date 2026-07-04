@@ -17,6 +17,8 @@ const staticCategories = [
   { name: "Room Essentials", slug: "room-essentials" },
   { name: "Sports Equipment", slug: "sports-equipment" },
   { name: "Services", slug: "services" },
+  { name: "Tutoring", slug: "tutoring" },
+  { name: "Courses", slug: "courses" },
   { name: "Free Items", slug: "free-items" },
   { name: "Others", slug: "others" }
 ];
@@ -35,6 +37,12 @@ export function BrowseListings() {
   const [maxPrice, setMaxPrice] = useState("");
   const [selectedConditions, setSelectedConditions] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState("newest");
+  const [listingType, setListingType] = useState("");
+  const [sellerType, setSellerType] = useState("");
+  const [location, setLocation] = useState("");
+  const [courseCode, setCourseCode] = useState("");
+  const [isbn, setIsbn] = useState("");
+  const [minRating, setMinRating] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -67,6 +75,12 @@ export function BrowseListings() {
     if (minPrice) params.minPrice = parseFloat(minPrice);
     if (maxPrice) params.maxPrice = parseFloat(maxPrice);
     if (selectedConditions.length > 0) params.condition = selectedConditions.join(",");
+    if (listingType) params.type = listingType;
+    if (sellerType) params.sellerType = sellerType;
+    if (location) params.location = location;
+    if (courseCode) params.courseCode = courseCode;
+    if (isbn) params.isbn = isbn;
+    if (minRating) params.minRating = minRating;
     
     // Sort
     if (sortBy === "price_asc") {
@@ -86,7 +100,7 @@ export function BrowseListings() {
     api.get("/listings", { params })
       .then((res) => {
         setListings(res.data.listings || []);
-        setTotalPages(res.data.totalPages || 1);
+        setTotalPages(res.data.pagination?.totalPages || 1);
       })
       .catch((err) => console.error("Error fetching listings:", err))
       .finally(() => setLoading(false));
@@ -94,7 +108,7 @@ export function BrowseListings() {
 
   useEffect(() => {
     fetchListings();
-  }, [selectedCategory, selectedConditions, sortBy, page]);
+  }, [selectedCategory, selectedConditions, listingType, sellerType, minRating, sortBy, page]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,6 +131,12 @@ export function BrowseListings() {
     setMaxPrice("");
     setSelectedConditions([]);
     setSortBy("newest");
+    setListingType("");
+    setSellerType("");
+    setLocation("");
+    setCourseCode("");
+    setIsbn("");
+    setMinRating("");
     setPage(1);
     setSearchParams({});
   };
@@ -172,7 +192,7 @@ export function BrowseListings() {
                     <span className={`text-sm ${selectedCategory === "" ? 'font-medium text-primary' : 'text-gray-600'}`}>All Categories</span>
                   </label>
                 </li>
-                {staticCategories.map(cat => (
+                {(categories.length ? categories : staticCategories).map(cat => (
                   <li key={cat.slug} className="flex items-center justify-between">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input 
@@ -187,6 +207,35 @@ export function BrowseListings() {
                   </li>
                 ))}
               </ul>
+            </div>
+
+            <div className="mb-8 space-y-3">
+              <h3 className="font-semibold text-foreground">Listing type</h3>
+              <select value={listingType} onChange={(e) => setListingType(e.target.value)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
+                <option value="">Products, services & courses</option>
+                <option value="PRODUCT">Products</option>
+                <option value="SERVICE">Services</option>
+                <option value="COURSE">Courses</option>
+              </select>
+              <select value={sellerType} onChange={(e) => setSellerType(e.target.value)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
+                <option value="">Any seller</option>
+                <option value="CASUAL">Casual sellers</option>
+                <option value="SHOP">Campus shops</option>
+                <option value="SERVICE_PROVIDER">Service providers</option>
+              </select>
+              <select value={minRating} onChange={(e) => setMinRating(e.target.value)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
+                <option value="">Any rating</option>
+                <option value="4">4★ and above</option>
+                <option value="5">5★ sellers</option>
+              </select>
+            </div>
+
+            <div className="mb-8 space-y-3">
+              <h3 className="font-semibold text-foreground">Campus & academic</h3>
+              <Input placeholder="Campus location" value={location} onChange={(e) => setLocation(e.target.value)} />
+              <Input placeholder="Course code" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
+              <Input placeholder="ISBN" value={isbn} onChange={(e) => setIsbn(e.target.value)} />
+              <Button variant="outline" onClick={fetchListings} className="w-full">Apply advanced filters</Button>
             </div>
 
             {/* Price Range */}
@@ -252,7 +301,7 @@ export function BrowseListings() {
           <div className="hidden lg:flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold text-foreground">
               {selectedCategory 
-                ? staticCategories.find(c => c.slug === selectedCategory)?.name 
+                ? (categories.length ? categories : staticCategories).find(c => c.slug === selectedCategory)?.name
                 : "All Listings"}
             </h1>
             
@@ -277,7 +326,7 @@ export function BrowseListings() {
           <div className="flex flex-wrap gap-2 mb-6">
             {selectedCategory && (
               <Badge variant="outline" className="bg-white border-gray-200 px-3 py-1 text-sm font-normal flex items-center gap-1">
-                Category: {staticCategories.find(c => c.slug === selectedCategory)?.name}
+                Category: {(categories.length ? categories : staticCategories).find(c => c.slug === selectedCategory)?.name}
                 <button onClick={() => setSelectedCategory("")} className="ml-1 hover:bg-gray-100 rounded-full p-0.5">×</button>
               </Badge>
             )}

@@ -13,7 +13,9 @@ import {
   Loader2, 
   Lock, 
   Unlock,
-  GraduationCap
+  GraduationCap,
+  Star,
+  Megaphone
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -21,19 +23,21 @@ import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { useAuth } from "../../state/AuthContext";
 import { api, mediaUrl } from "../../api/client";
-import type { User, Listing, Report, Transaction } from "../../types";
+import type { User, Listing, Report, Transaction, Announcement } from "../../types";
 
 export function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<"moderation" | "students" | "transactions" | "reports">("moderation");
+  const [activeTab, setActiveTab] = useState<"moderation" | "students" | "transactions" | "reports" | "reviews" | "announcements">("moderation");
   
   // Data States
   const [pendingListings, setPendingListings] = useState<Listing[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Rejection Dialog State
@@ -68,6 +72,10 @@ export function AdminPage() {
       // Get reports
       const reportsRes = await api.get("/admin/reports");
       setReports(reportsRes.data.reports || []);
+      const reviewsRes = await api.get("/admin/reviews");
+      setReviews(reviewsRes.data.reviews || []);
+      const announcementsRes = await api.get("/admin/announcements");
+      setAnnouncements(announcementsRes.data.announcements || []);
     } catch (err) {
       console.error("Error fetching admin data:", err);
     } finally {
@@ -91,7 +99,7 @@ export function AdminPage() {
   const handleApprove = async (id: string) => {
     setActionLoading(true);
     try {
-      await api.patch(`/admin/listings/${id}/moderate`, { status: "ACTIVE" });
+      await api.patch(`/admin/listings/${id}/status`, { status: "ACTIVE" });
       setPendingListings(pendingListings.filter(l => l.id !== id));
       alert("Listing approved successfully!");
     } catch (err) {
@@ -108,7 +116,7 @@ export function AdminPage() {
 
     setActionLoading(true);
     try {
-      await api.patch(`/admin/listings/${rejectingId}/moderate`, { 
+      await api.patch(`/admin/listings/${rejectingId}/status`, {
         status: "REJECTED",
         rejectionReason: rejectionReason.trim()
       });
@@ -145,6 +153,13 @@ export function AdminPage() {
       console.error(err);
       alert("Action failed.");
     }
+  };
+
+  const moderateAnnouncement = async (id: string, status: "ACTIVE" | "REJECTED") => {
+    const rejectionReason = status === "REJECTED" ? window.prompt("Why is this announcement being rejected?") || undefined : undefined;
+    if (status === "REJECTED" && !rejectionReason) return;
+    await api.patch(`/admin/announcements/${id}/status`, { status, rejectionReason });
+    setAnnouncements((current) => current.map((announcement) => announcement.id === id ? { ...announcement, status, rejectionReason } : announcement));
   };
 
   // Group Students by ID Range (e.g., Intake ranges)
@@ -243,6 +258,13 @@ export function AdminPage() {
                 {reports.filter(r => r.status === "OPEN").length}
               </Badge>
             )}
+          </button>
+          <button onClick={() => setActiveTab("reviews")} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${activeTab === "reviews" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"}`}>
+            <Star className="w-4 h-4" /> Ratings & trust
+          </button>
+          <button onClick={() => setActiveTab("announcements")} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${activeTab === "announcements" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"}`}>
+            <Megaphone className="w-4 h-4" /> Announcements
+            {announcements.filter((announcement) => announcement.status === "PENDING").length > 0 && <Badge className="bg-red-200 text-red-800">{announcements.filter((announcement) => announcement.status === "PENDING").length}</Badge>}
           </button>
         </div>
 
@@ -501,7 +523,21 @@ export function AdminPage() {
           </div>
         )}
 
-        {/* 4. User Reports */}
+        {activeTab === "reviews" && (
+          <div className="space-y-6">
+            <div><h2 className="text-xl font-bold text-gray-900">Ratings & marketplace trust</h2><p className="text-sm text-muted-foreground">Reviews are linked to completed transactions. Block accounts from here when a pattern needs intervention.</p></div>
+            <div className="space-y-3">{reviews.length === 0 ? <div className="bg-white rounded-2xl border p-10 text-center text-muted-foreground">No reviews yet.</div> : reviews.map((review) => <Card key={review.id}><CardContent className="p-5 flex flex-col md:flex-row gap-4 md:items-center"><div className="flex-1"><div className="flex gap-1 mb-2">{Array.from({ length: 5 }).map((_, index) => <Star key={index} className={`w-4 h-4 ${index < review.rating ? "fill-amber-400 text-amber-400" : "text-gray-300"}`} />)}</div><p className="font-semibold">{review.transaction?.listing?.title}</p><p className="text-sm text-muted-foreground">{review.reviewer?.name} reviewed {review.reviewee?.name}</p>{review.comment && <p className="text-sm mt-2">“{review.comment}”</p>}</div><Button variant={review.reviewee?.isBlocked ? "default" : "outline"} onClick={() => handleToggleBlock(review.reviewee.id, review.reviewee.isBlocked)}>{review.reviewee?.isBlocked ? "Unblock seller" : "Block seller"}</Button></CardContent></Card>)}</div>
+          </div>
+        )}
+
+        {activeTab === "announcements" && (
+          <div className="space-y-6">
+            <div><h2 className="text-xl font-bold text-gray-900">Announcement approval</h2><p className="text-sm text-muted-foreground">Keep the campus board useful and non-commercial.</p></div>
+            <div className="grid md:grid-cols-2 gap-5">{announcements.map((announcement: any) => <Card key={announcement.id}><CardContent className="p-6"><div className="flex justify-between gap-3"><div><Badge variant="outline">{announcement.status}</Badge><h3 className="font-bold text-lg mt-2">{announcement.title}</h3></div><span className="text-xs text-muted-foreground">{announcement.author?.name}</span></div><p className="text-sm text-gray-600 mt-3 whitespace-pre-line">{announcement.body}</p>{announcement.status === "PENDING" && <div className="flex gap-2 mt-5 pt-4 border-t"><Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => moderateAnnouncement(announcement.id, "ACTIVE")}>Approve</Button><Button className="flex-1" variant="destructive" onClick={() => moderateAnnouncement(announcement.id, "REJECTED")}>Reject</Button></div>}</CardContent></Card>)}</div>
+          </div>
+        )}
+
+        {/* User Reports */}
         {activeTab === "reports" && (
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-gray-900">Safety Reports ({reports.length})</h2>

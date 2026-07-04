@@ -11,6 +11,9 @@ import favoriteRoutes from "./routes/favorites.js";
 import conversationRoutes from "./routes/conversations.js";
 import reportRoutes from "./routes/reports.js";
 import adminRoutes from "./routes/admin.js";
+import transactionRoutes from "./routes/transactions.js";
+import announcementRoutes from "./routes/announcements.js";
+import communityRoutes from "./routes/community.js";
 import { registerSwagger } from "./swagger.js";
 
 export function createApp() {
@@ -29,6 +32,9 @@ export function createApp() {
   app.use("/api/conversations", conversationRoutes);
   app.use("/api/reports", reportRoutes);
   app.use("/api/admin", adminRoutes);
+  app.use("/api/transactions", transactionRoutes);
+  app.use("/api/announcements", announcementRoutes);
+  app.use("/api/community", communityRoutes);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);

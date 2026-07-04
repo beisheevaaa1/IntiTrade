@@ -1,4 +1,4 @@
-import { ListingStatus, ReportStatus } from "@prisma/client";
+import { AnnouncementStatus, ListingStatus, ReportStatus } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
@@ -50,6 +50,9 @@ router.patch("/listings/:id/status", async (req, res) => {
     }
   });
 
+  await prisma.notification.create({
+    data: { userId: listing.sellerId, type: `LISTING_${parsed.data.status}`, payload: JSON.stringify({ listingId: listing.id, reason: parsed.data.rejectionReason }) }
+  });
   res.json({ listing });
 });
 
@@ -119,7 +122,10 @@ router.get("/users", async (_req, res) => {
       isBlocked: true,
       faculty: true,
       campusArea: true,
-      createdAt: true
+      sellerType: true,
+      createdAt: true,
+      _count: { select: { reviewsReceived: true, listings: true } },
+      reviewsReceived: { select: { rating: true } }
     },
     orderBy: { createdAt: "desc" }
   });
@@ -136,6 +142,43 @@ router.get("/transactions", async (_req, res) => {
     orderBy: { createdAt: "desc" }
   });
   res.json({ transactions });
+});
+
+router.get("/reviews", async (_req, res) => {
+  const reviews = await prisma.review.findMany({
+    include: {
+      reviewer: { select: { id: true, name: true, email: true } },
+      reviewee: { select: { id: true, name: true, email: true, isBlocked: true } },
+      transaction: { include: { listing: { select: { id: true, title: true } } } }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200
+  });
+  res.json({ reviews });
+});
+
+router.get("/announcements", async (_req, res) => {
+  const announcements = await prisma.announcement.findMany({
+    include: { author: { select: { id: true, name: true, email: true } } },
+    orderBy: { createdAt: "desc" }
+  });
+  res.json({ announcements });
+});
+
+router.patch("/announcements/:id/status", async (req, res) => {
+  const parsed = z.object({ status: z.nativeEnum(AnnouncementStatus), rejectionReason: z.string().max(500).optional() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ message: "Invalid announcement status" });
+  const announcement = await prisma.announcement.update({
+    where: { id: req.params.id },
+    data: { status: parsed.data.status, rejectionReason: parsed.data.status === AnnouncementStatus.REJECTED ? parsed.data.rejectionReason : null }
+  });
+  await prisma.adminActionLog.create({
+    data: { adminId: req.user!.id, action: `ANNOUNCEMENT_${parsed.data.status}`, entityType: "Announcement", entityId: announcement.id, reason: parsed.data.rejectionReason }
+  });
+  await prisma.notification.create({
+    data: { userId: announcement.authorId, type: `ANNOUNCEMENT_${parsed.data.status}`, payload: JSON.stringify({ announcementId: announcement.id, reason: parsed.data.rejectionReason }) }
+  });
+  res.json({ announcement });
 });
 
 export default router;

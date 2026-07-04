@@ -11,7 +11,7 @@ import { Card, CardContent } from "../components/ui/card";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
 import { api, mediaUrl } from "../../api/client";
 import { useAuth } from "../../state/AuthContext";
-import type { Category } from "../../types";
+import type { Category, ListingType, MeetupPoint, SellerType } from "../../types";
 
 const conditionsList = [
   { name: "Brand New", value: "NEW" },
@@ -38,14 +38,25 @@ export function CreateListing() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [type, setType] = useState<"PRODUCT" | "SERVICE">("PRODUCT");
+  const [type, setType] = useState<ListingType>("PRODUCT");
   const [condition, setCondition] = useState("GOOD");
   const [location, setLocation] = useState("Student Center");
   const [meetupPreference, setMeetupPreference] = useState(locationsList[0]);
   const [isNegotiable, setIsNegotiable] = useState(false);
+  const [sellerType, setSellerType] = useState<SellerType>(user?.sellerType ?? "CASUAL");
+  const [quantity, setQuantity] = useState("1");
+  const [isbn, setIsbn] = useState("");
+  const [author, setAuthor] = useState("");
+  const [edition, setEdition] = useState("");
+  const [courseCode, setCourseCode] = useState("");
+  const [serviceDuration, setServiceDuration] = useState("60");
+  const [pricingUnit, setPricingUnit] = useState<"ITEM" | "HOUR" | "SESSION" | "COURSE">("ITEM");
+  const [availabilityNote, setAvailabilityNote] = useState("");
   
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [meetupPoints, setMeetupPoints] = useState<MeetupPoint[]>([]);
+  const [meetupPointId, setMeetupPointId] = useState("");
   const [images, setImages] = useState<string[]>([]); // URLs from API uploads
   
   const [isPublishing, setIsPublishing] = useState(false);
@@ -66,6 +77,10 @@ export function CreateListing() {
         }
       })
       .catch((err) => console.error("Error fetching categories:", err));
+    api.get("/community/meetup-points").then((res) => {
+      setMeetupPoints(res.data.meetupPoints);
+      setMeetupPointId(res.data.meetupPoints[0]?.id ?? "");
+    }).catch(() => undefined);
   }, [navigate]);
 
   // Real Image Upload
@@ -114,17 +129,27 @@ export function CreateListing() {
     setError("");
 
     try {
+      if (sellerType !== user?.sellerType) await api.patch("/auth/profile", { sellerType });
       await api.post("/listings", {
         title,
         description,
         price: parseFloat(price),
         type,
-        condition: type === "SERVICE" ? "NOT_APPLICABLE" : condition,
+        condition: type === "PRODUCT" ? condition : "NOT_APPLICABLE",
         location,
         meetupPreference,
         isNegotiable,
+        meetupPointId: meetupPointId || null,
+        quantity: type === "PRODUCT" ? Number(quantity) : 1,
+        isbn: isbn || undefined,
+        author: author || undefined,
+        edition: edition || undefined,
+        courseCode: courseCode || undefined,
+        serviceDuration: type !== "PRODUCT" ? Number(serviceDuration) : undefined,
+        pricingUnit: type === "PRODUCT" ? "ITEM" : pricingUnit,
+        availabilityNote: type !== "PRODUCT" ? availabilityNote || undefined : undefined,
         categoryId: selectedCategoryId,
-        images // Pass uploaded image urls array
+        imageUrls: images
       });
 
       setIsSuccess(true);
@@ -146,7 +171,7 @@ export function CreateListing() {
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="h-10 w-10 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold text-foreground mb-2">Listing Published!</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-2">Sent for review!</h2>
           <p className="text-muted-foreground mb-6">Your item has been submitted for moderation. You can find it on your dashboard.</p>
           <p className="text-sm text-muted-foreground animate-pulse">Redirecting to your dashboard...</p>
         </div>
@@ -163,11 +188,11 @@ export function CreateListing() {
             <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors p-2 -ml-2 rounded-full hover:bg-gray-100">
               <ArrowLeft className="h-5 w-5" />
             </Link>
-            <h1 className="text-xl font-bold text-foreground">Post a New Item</h1>
+            <h1 className="text-xl font-bold text-foreground">Create a listing</h1>
           </div>
           <div className="flex gap-3">
             <Button onClick={() => document.getElementById("submit-listing-btn")?.click()} disabled={isPublishing}>
-              {isPublishing ? "Publishing..." : "Publish Item"}
+              {isPublishing ? "Submitting..." : "Submit for approval"}
             </Button>
           </div>
         </div>
@@ -243,7 +268,7 @@ export function CreateListing() {
 
           {/* Details Section */}
           <section>
-            <h2 className="text-lg font-bold text-foreground mb-4">Item Details</h2>
+            <h2 className="text-lg font-bold text-foreground mb-4">Listing details</h2>
             <Card>
               <CardContent className="p-6 space-y-6">
                 
@@ -266,11 +291,16 @@ export function CreateListing() {
                     <select
                       id="type"
                       value={type}
-                      onChange={(e) => setType(e.target.value as "PRODUCT" | "SERVICE")}
+                      onChange={(e) => {
+                        const value = e.target.value as ListingType;
+                        setType(value);
+                        setPricingUnit(value === "COURSE" ? "COURSE" : value === "SERVICE" ? "SESSION" : "ITEM");
+                      }}
                       className="w-full h-10 px-3 bg-white border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary text-sm"
                     >
                       <option value="PRODUCT">Physical Product</option>
-                      <option value="SERVICE">Academic Service</option>
+                      <option value="SERVICE">Service</option>
+                      <option value="COURSE">Course or tutoring program</option>
                     </select>
                   </div>
 
@@ -292,7 +322,8 @@ export function CreateListing() {
                 </div>
 
                 {type === "PRODUCT" && (
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
                     <Label htmlFor="condition">Condition *</Label>
                     <select
                       id="condition"
@@ -306,6 +337,54 @@ export function CreateListing() {
                         </option>
                       ))}
                     </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="quantity">Quantity available *</Label>
+                      <Input id="quantity" type="number" min="1" max="10000" value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
+                      <p className="text-xs text-muted-foreground">Use 1 for a one-off item, or your actual stock for a shop.</p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="sellerType">How are you selling?</Label>
+                  <select id="sellerType" value={sellerType} onChange={(e) => setSellerType(e.target.value as SellerType)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
+                    <option value="CASUAL">Casual seller — occasional personal items</option>
+                    <option value="SHOP">Campus shop — multiple products or stock</option>
+                    <option value="SERVICE_PROVIDER">Service or course provider</option>
+                  </select>
+                </div>
+
+                {(type === "COURSE" || categories.find((category) => category.id === selectedCategoryId)?.slug === "textbooks") && (
+                  <div className="rounded-xl border bg-gray-50 p-4 space-y-4">
+                    <p className="font-semibold text-sm">Academic details</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Input placeholder="Course code (e.g. MAT110)" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
+                      <Input placeholder="Author" value={author} onChange={(e) => setAuthor(e.target.value)} />
+                      <Input placeholder="ISBN" value={isbn} onChange={(e) => setIsbn(e.target.value)} />
+                      <Input placeholder="Edition" value={edition} onChange={(e) => setEdition(e.target.value)} />
+                    </div>
+                  </div>
+                )}
+
+                {type !== "PRODUCT" && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label>Duration in minutes</Label>
+                      <Input type="number" min="15" value={serviceDuration} onChange={(e) => setServiceDuration(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Price is per</Label>
+                      <select value={pricingUnit} onChange={(e) => setPricingUnit(e.target.value as typeof pricingUnit)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
+                        <option value="HOUR">Hour</option>
+                        <option value="SESSION">Session</option>
+                        <option value="COURSE">Whole course</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Availability</Label>
+                      <Input value={availabilityNote} onChange={(e) => setAvailabilityNote(e.target.value)} placeholder="Weekdays after 4 PM, Saturday mornings, or contact me to arrange" />
+                    </div>
                   </div>
                 )}
 
@@ -375,7 +454,13 @@ export function CreateListing() {
               <CardContent className="p-6 space-y-6">
                 
                 <div className="space-y-3">
-                  <Label>Preferred Campus Meeting Location *</Label>
+                  <Label>Verified safe meetup point</Label>
+                  <select value={meetupPointId} onChange={(e) => setMeetupPointId(e.target.value)} className="w-full h-10 px-3 bg-white border border-border rounded-md text-sm">
+                    <option value="">Choose later</option>
+                    {meetupPoints.map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}
+                  </select>
+                  {meetupPoints.find((point) => point.id === meetupPointId)?.description && <p className="text-xs text-green-700">{meetupPoints.find((point) => point.id === meetupPointId)?.description}</p>}
+                  <Label>Other preferred location</Label>
                   <RadioGroup 
                     value={meetupPreference}
                     onValueChange={(val) => setMeetupPreference(val)}
@@ -412,7 +497,7 @@ export function CreateListing() {
           
           <div className="sm:hidden pt-4 pb-8">
              <Button type="submit" className="w-full py-6 text-lg rounded-xl" disabled={isPublishing}>
-              {isPublishing ? "Publishing..." : "Publish Listing"}
+              {isPublishing ? "Submitting..." : "Submit for approval"}
             </Button>
           </div>
 

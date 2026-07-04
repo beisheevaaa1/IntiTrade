@@ -34,6 +34,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 }
 
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
+  if (!token) return next();
+  try {
+    const payload = verifyAccessToken(token);
+    const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id: true, role: true, isBlocked: true } });
+    if (user && !user.isBlocked) req.user = { id: user.id, role: user.role };
+  } catch {
+    // Public routes remain public when a stale token is supplied.
+  }
+  next();
+}
+
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   if (req.user?.role !== Role.ADMIN) {
     return res.status(403).json({ message: "Admin access required" });

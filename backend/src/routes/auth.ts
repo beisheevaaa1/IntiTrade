@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { SellerType } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { env } from "../env.js";
@@ -103,7 +104,11 @@ const updateProfileSchema = z.object({
   autoReplyEnabled: z.boolean().optional(),
   autoReplyMessage: z.string().max(500).optional(),
   autoReplyDelay: z.number().nonnegative().optional(),
-  showOnlineStatus: z.boolean().optional()
+  showOnlineStatus: z.boolean().optional(),
+  sellerType: z.nativeEnum(SellerType).optional(),
+  showEmail: z.boolean().optional(),
+  showCampusArea: z.boolean().optional(),
+  allowMessages: z.boolean().optional()
 });
 
 router.patch("/profile", requireAuth, async (req, res) => {

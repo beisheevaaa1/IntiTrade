@@ -52,6 +52,9 @@ export function Inbox() {
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
+  const [offerAmount, setOfferAmount] = useState("");
+  const [showOffer, setShowOffer] = useState(false);
+  const [pendingAttachmentUrl, setPendingAttachmentUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -242,8 +245,8 @@ export function Inbox() {
     }
   }, [isPartnerTyping]);
 
-  const handleSendMessage = async (textToSend: string) => {
-    if (!textToSend.trim() || !activeConversation) return;
+  const handleSendMessage = async (textToSend: string, attachmentUrl = pendingAttachmentUrl, offer = offerAmount) => {
+    if ((!textToSend.trim() && !attachmentUrl && !offer) || !activeConversation) return;
 
     const text = textToSend.trim();
 
@@ -256,10 +259,12 @@ export function Inbox() {
       if (socketRef.current) {
         socketRef.current.emit("message:send", {
           conversationId: activeConversation.id,
-          body: text
+          body: text,
+          attachmentUrl: attachmentUrl || undefined,
+          offerAmount: offer ? Number(offer) : undefined
         });
       } else {
-        await api.post(`/conversations/${activeConversation.id}/messages`, { body: text });
+        await api.post(`/conversations/${activeConversation.id}/messages`, { body: text, attachmentUrl: attachmentUrl || undefined, offerAmount: offer ? Number(offer) : undefined });
         fetchConversations(activeConversation.id);
       }
     } catch (err) {
@@ -286,12 +291,36 @@ export function Inbox() {
     e.preventDefault();
     handleSendMessage(newMessage);
     setNewMessage("");
+    setPendingAttachmentUrl("");
+    setOfferAmount("");
+    setShowOffer(false);
+  };
+
+  const handleChatImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    const response = await api.post("/uploads", form, { headers: { "Content-Type": "multipart/form-data" } });
+    setPendingAttachmentUrl(response.data.url);
   };
 
   const selectConversation = (conv: Conversation) => {
     setActiveConversation(conv);
     setMessages(conv.messages || []);
     setSearchParams({ conversationId: conv.id });
+    void api.patch(`/conversations/${conv.id}/read`).then(() => {
+      setMessages((current) => current.map((message) => message.sender.id !== user?.id ? { ...message, readAt: message.readAt ?? new Date().toISOString() } : message));
+    });
+  };
+
+  const blockPartner = async () => {
+    if (!activeConversation || !user) return;
+    const partnerId = activeConversation.buyer.id === user.id ? activeConversation.seller.id : activeConversation.buyer.id;
+    if (!window.confirm(`Block ${getPartnerName(activeConversation)} and stop messaging?`)) return;
+    await api.post(`/community/blocks/${partnerId}`);
+    setActiveConversation(null);
+    void fetchConversations();
   };
 
   // Open the switcher and load listing candidates
@@ -504,6 +533,7 @@ export function Inbox() {
                 </span>
               </div>
             </div>
+            <Button variant="ghost" size="sm" onClick={blockPartner} className="text-muted-foreground gap-1"><Shield className="w-4 h-4" /> Block</Button>
           </div>
 
           {/* Product Banner (Context Attachment) */}
@@ -563,9 +593,11 @@ export function Inbox() {
                         ? 'bg-primary text-white rounded-tr-sm' 
                         : 'bg-white border border-border text-gray-800 rounded-tl-sm'
                     }`}>
-                      <p className="text-sm break-words whitespace-pre-wrap">{msg.body}</p>
+                      {msg.offerAmount && <div className={`rounded-xl p-3 mb-2 ${isMe ? "bg-white/15" : "bg-green-50 text-green-900 border border-green-100"}`}><p className="text-[10px] font-bold uppercase tracking-wide">Price offer</p><p className="text-lg font-extrabold">RM {Number(msg.offerAmount).toFixed(2)}</p></div>}
+                      {msg.attachmentUrl && <img src={mediaUrl(msg.attachmentUrl)} alt="Chat attachment" className="rounded-xl max-h-60 object-cover mb-2" />}
+                      {msg.body && <p className="text-sm break-words whitespace-pre-wrap">{msg.body}</p>}
                       <span className={`text-[9px] block mt-1 ${isMe ? 'text-red-200 text-right' : 'text-gray-400'}`}>
-                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}{isMe ? ` · ${msg.readAt ? "Read" : "Sent"}` : ""}
                       </span>
                     </div>
                   </div>
@@ -629,10 +661,11 @@ export function Inbox() {
 
           {/* Message Input */}
           <form onSubmit={onSendSubmit} className="p-3 sm:p-4 bg-white border-t border-border shrink-0">
+            {pendingAttachmentUrl && <div className="mb-2 flex items-center gap-2 bg-gray-50 rounded-xl p-2"><img src={mediaUrl(pendingAttachmentUrl)} className="w-14 h-14 object-cover rounded-lg" alt="Ready to send" /><span className="text-xs flex-1">Image ready to send</span><Button type="button" variant="ghost" size="icon" onClick={() => setPendingAttachmentUrl("")}><X className="w-4 h-4" /></Button></div>}
+            {showOffer && <div className="mb-2 flex items-center gap-2"><Input type="number" min="0.01" step="0.01" value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} placeholder="Offer amount in RM" /><Button type="button" variant="ghost" onClick={() => { setShowOffer(false); setOfferAmount(""); }}>Cancel</Button></div>}
             <div className="flex items-center gap-2">
-              <Button type="button" variant="ghost" size="icon" className="text-gray-400 hover:text-gray-600 shrink-0">
-                <ImageIcon className="h-5 w-5" />
-              </Button>
+              <label className="h-10 w-10 flex items-center justify-center cursor-pointer text-gray-400 hover:text-gray-600 shrink-0"><input type="file" accept="image/*" className="hidden" onChange={handleChatImage} /><ImageIcon className="h-5 w-5" /></label>
+              <Button type="button" variant="ghost" size="icon" onClick={() => setShowOffer(!showOffer)} title="Make an offer"><Tag className="h-5 w-5" /></Button>
               <div className="flex-1 relative">
                 <Input 
                   placeholder="Type a message..." 

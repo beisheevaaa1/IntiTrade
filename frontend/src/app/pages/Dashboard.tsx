@@ -27,11 +27,13 @@ import type { Listing } from "../../types";
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [conversationsCount, setConversationsCount] = useState(0);
+  const [transactions, setTransactions] = useState<import("../../types").Transaction[]>([]);
+  const [privacy, setPrivacy] = useState({ showEmail: user?.showEmail ?? false, showCampusArea: user?.showCampusArea ?? true, allowMessages: user?.allowMessages ?? true, showOnlineStatus: user?.showOnlineStatus ?? true });
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -43,6 +45,8 @@ export function Dashboard() {
       // Fetch conversations count
       const convsRes = await api.get("/conversations");
       setConversationsCount(convsRes.data.conversations?.length || 0);
+      const transactionsRes = await api.get("/transactions");
+      setTransactions(transactionsRes.data.transactions || []);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
     } finally {
@@ -67,6 +71,29 @@ export function Dashboard() {
       console.error("Error updating status:", err);
       alert("Failed to update status.");
     }
+  };
+
+  const updateTransaction = async (id: string, status: "COMPLETED" | "CANCELLED" | "DISPUTED") => {
+    const reason = status === "DISPUTED" ? window.prompt("What went wrong?") : undefined;
+    if (status === "DISPUTED" && !reason) return;
+    const response = await api.patch(`/transactions/${id}/status`, { status, reason });
+    setTransactions((current) => current.map((transaction) => transaction.id === id ? response.data.transaction : transaction));
+    void fetchDashboardData();
+  };
+
+  const leaveReview = async (transactionId: string) => {
+    const value = window.prompt("Rate this seller from 1 to 5");
+    const rating = Number(value);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return;
+    const comment = window.prompt("Add a short comment (optional)") || undefined;
+    await api.post(`/transactions/${transactionId}/review`, { rating, comment });
+    void fetchDashboardData();
+  };
+
+  const savePrivacy = async () => {
+    const response = await api.patch("/auth/profile", privacy);
+    updateUser(response.data.user);
+    alert("Privacy preferences saved.");
   };
 
   // Calculations
@@ -269,22 +296,40 @@ export function Dashboard() {
                             </Button>
                           </>
                         )}
-                        {item.status === "ARCHIVED" && (
-                          <Button 
-                            onClick={() => handleUpdateStatus(item.id, "ACTIVE")}
-                            variant="outline" 
-                            size="sm" 
-                            className="h-8 text-xs"
-                          >
-                            Activate
-                          </Button>
-                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm border-border bg-white mb-8">
+          <CardHeader className="border-b border-border pb-4"><CardTitle className="text-lg">Reservations, bookings & purchases</CardTitle></CardHeader>
+          <CardContent className="p-0">
+            {transactions.length === 0 ? <div className="text-center py-10 text-muted-foreground">No reservations or bookings yet.</div> : <div className="divide-y divide-border">{transactions.map((transaction) => {
+              const isSeller = transaction.sellerId === user?.id;
+              return <div key={transaction.id} className="p-5 flex flex-col md:flex-row gap-4 md:items-center">
+                <div className="flex-1"><p className="font-semibold">{transaction.listing?.title}</p><p className="text-sm text-muted-foreground">{isSeller ? `Buyer: ${transaction.buyer?.name}` : `Seller: ${transaction.seller?.name}`} · RM {Number(transaction.price).toFixed(2)}{transaction.quantity > 1 ? ` × ${transaction.quantity}` : ""}</p>{transaction.meetupPoint && <p className="text-xs text-green-700 mt-1">Meet at {transaction.meetupPoint.name}</p>}</div>
+                <span className={`text-xs font-bold px-3 py-1 rounded-full self-start ${transaction.status === "COMPLETED" ? "bg-green-100 text-green-700" : transaction.status === "DISPUTED" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{transaction.status}</span>
+                {transaction.status === "RESERVED" && <div className="flex gap-2">{isSeller && <Button size="sm" onClick={() => updateTransaction(transaction.id, "COMPLETED")}>Complete handoff</Button>}<Button size="sm" variant="outline" onClick={() => updateTransaction(transaction.id, "CANCELLED")}>Cancel</Button><Button size="sm" variant="ghost" onClick={() => updateTransaction(transaction.id, "DISPUTED")}>Dispute</Button></div>}
+                {transaction.status === "COMPLETED" && !isSeller && !transaction.review && <Button size="sm" variant="outline" className="gap-1" onClick={() => leaveReview(transaction.id)}><Star className="w-4 h-4" /> Rate seller</Button>}
+              </div>;
+            })}</div>}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm border-border bg-white mb-8">
+          <CardHeader className="border-b border-border pb-4"><CardTitle className="text-lg">Privacy & contact</CardTitle></CardHeader>
+          <CardContent className="p-6 space-y-4">
+            {[
+              ["showEmail", "Show my email on listings"],
+              ["showCampusArea", "Show my campus area"],
+              ["allowMessages", "Allow new buyer messages"],
+              ["showOnlineStatus", "Show when I am online"]
+            ].map(([key, label]) => <label key={key} className="flex items-center justify-between border rounded-xl p-4"><span className="text-sm font-medium">{label}</span><input type="checkbox" checked={privacy[key as keyof typeof privacy]} onChange={(event) => setPrivacy((current) => ({ ...current, [key]: event.target.checked }))} className="h-5 w-5 accent-red-600" /></label>)}
+            <div className="flex justify-end"><Button onClick={savePrivacy}>Save privacy settings</Button></div>
           </CardContent>
         </Card>
       </main>

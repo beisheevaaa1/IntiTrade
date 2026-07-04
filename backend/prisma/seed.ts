@@ -1,4 +1,4 @@
-import { PrismaClient, ListingCondition, ListingStatus, ListingType, Role } from "@prisma/client";
+import { PrismaClient, ListingCondition, ListingStatus, ListingType, Role, SellerType, TransactionStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -8,6 +8,7 @@ const categories = [
   ["Electronics", "electronics"],
   ["Dorm essentials", "dorm-essentials"],
   ["Tutoring", "tutoring"],
+  ["Courses", "courses"],
   ["Creative services", "creative-services"],
   ["Transport", "transport"],
   ["Sports", "sports"],
@@ -108,8 +109,13 @@ const listingTemplates = [
   }
 ];
 
+function templateSellerType(index: number) {
+  return index % 3 === 0 ? SellerType.SERVICE_PROVIDER : SellerType.CASUAL;
+}
+
 async function main() {
   console.log("Cleaning database...");
+  await prisma.review.deleteMany();
   await prisma.transaction.deleteMany();
   await prisma.report.deleteMany();
   await prisma.favorite.deleteMany();
@@ -120,7 +126,10 @@ async function main() {
   await prisma.emailVerificationToken.deleteMany();
   await prisma.adminActionLog.deleteMany();
   await prisma.notification.deleteMany();
+  await prisma.userBlock.deleteMany();
+  await prisma.announcement.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.meetupPoint.deleteMany();
   await prisma.category.deleteMany();
 
   console.log("Seeding categories...");
@@ -131,6 +140,12 @@ async function main() {
     });
     dbCategories[slug] = cat.id;
   }
+
+  const meetupPoints = await Promise.all([
+    prisma.meetupPoint.create({ data: { name: "Main Library Entrance", description: "Covered, staffed entrance with CCTV", campusArea: "Main Campus" } }),
+    prisma.meetupPoint.create({ data: { name: "Student Centre Help Desk", description: "Busy public lobby beside the help desk", campusArea: "Student Centre" } }),
+    prisma.meetupPoint.create({ data: { name: "Cafeteria Main Entrance", description: "Daytime meetup point near campus security", campusArea: "Cafeteria" } })
+  ]);
 
   console.log("Seeding admin...");
   const adminPassword = await bcrypt.hash("admin123", 12);
@@ -175,7 +190,8 @@ async function main() {
         faculty: faculties[i % faculties.length],
         campusArea: campusAreas[i % campusAreas.length],
         bio: `Hi, I am Student ${i} from INTI. Let's trade safely!`,
-        avatarUrl: `https://images.unsplash.com/photo-${1500000000000 + i * 10000}?w=150&h=150&fit=crop&q=80`
+        avatarUrl: `https://images.unsplash.com/photo-${1500000000000 + i * 10000}?w=150&h=150&fit=crop&q=80`,
+        sellerType: i % 5 === 0 ? SellerType.SHOP : templateSellerType(i)
       }
     });
     students.push(user);
@@ -211,6 +227,7 @@ async function main() {
           status,
           location: "INTI Campus",
           meetupPreference: "INTI Library Level 2",
+          meetupPointId: meetupPoints[sIdx % meetupPoints.length].id,
           sellerId: student.id,
           categoryId: dbCategories[template.categorySlug],
           isNegotiable: sIdx % 2 === 0,
@@ -240,13 +257,19 @@ async function main() {
     const buyerIdx = (sellerIdx + 2) % students.length;
     const buyer = students[buyerIdx];
 
-    await prisma.transaction.create({
+    const transaction = await prisma.transaction.create({
       data: {
         listingId: listing.id,
         buyerId: buyer.id,
         sellerId: listing.sellerId,
-        price: listing.price
+        price: listing.price,
+        status: TransactionStatus.COMPLETED,
+        completedAt: new Date()
       }
+    });
+
+    await prisma.review.create({
+      data: { transactionId: transaction.id, reviewerId: buyer.id, revieweeId: listing.sellerId, rating: 4 + (tIdx % 2), comment: "Smooth campus meetup and the item matched the description." }
     });
 
     const conv = await prisma.conversation.create({

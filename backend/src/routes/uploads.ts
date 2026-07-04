@@ -17,7 +17,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024, files: 6 },
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) return cb(new Error("Only images are allowed"));
     cb(null, true);
@@ -26,10 +26,13 @@ const upload = multer({
 
 const router = Router();
 
-router.post("/", requireAuth, upload.array("images", 6), (req, res) => {
+router.post("/", requireAuth, upload.any(), (req, res) => {
   const files = (req.files ?? []) as Express.Multer.File[];
+  if (files.length > 6) return res.status(400).json({ message: "Maximum of 6 images allowed" });
+  const urls = files.map((file) => `/uploads/${file.filename}`);
   res.status(201).json({
-    urls: files.map((file) => `/uploads/${file.filename}`)
+    urls,
+    url: urls[0]
   });
 });
 

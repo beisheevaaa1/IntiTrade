@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router";
 import { Heart, MessageCircle, Share2, MapPin, ShieldCheck, Flag, Clock, User, Star, Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { api, mediaUrl } from "../../api/client";
@@ -18,6 +19,9 @@ export function ProductDetail() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [isFavorited, setIsFavorited] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
+  const [reserveLoading, setReserveLoading] = useState(false);
+  const [reserved, setReserved] = useState(false);
+  const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
     if (!id) return;
@@ -77,6 +81,35 @@ export function ProductDetail() {
     } finally {
       setChatLoading(false);
     }
+  };
+
+  const handleReserve = async () => {
+    if (!user) return navigate("/login");
+    if (!product || product.sellerId === user.id) return;
+    setReserveLoading(true);
+    try {
+      await api.post("/transactions", { listingId: product.id, quantity, meetupPointId: product.meetupPointId || null });
+      setReserved(true);
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Could not create the reservation.");
+    } finally {
+      setReserveLoading(false);
+    }
+  };
+
+  const handleReport = async () => {
+    if (!user) return navigate("/login");
+    const reason = window.prompt("Why are you reporting this listing?");
+    if (!reason) return;
+    await api.post("/reports", { listingId: product.id, reason });
+    alert("Thanks. The admin team will review your report.");
+  };
+
+  const handleBlockSeller = async () => {
+    if (!user || !product) return navigate("/login");
+    if (!window.confirm(`Block ${product.seller.name}? They will no longer be able to message you.`)) return;
+    await api.post(`/community/blocks/${product.sellerId}`);
+    alert("Seller blocked.");
   };
 
   const formatCondition = (cond: string) => {
@@ -163,6 +196,14 @@ export function ProductDetail() {
               <div className="prose max-w-none text-gray-600 space-y-4 whitespace-pre-line">
                 {product.description}
               </div>
+              {(product.isbn || product.author || product.edition || product.courseCode) && (
+                <div className="grid grid-cols-2 gap-4 mt-8 pt-6 border-t text-sm">
+                  {product.courseCode && <div><span className="text-muted-foreground block">Course code</span><strong>{product.courseCode}</strong></div>}
+                  {product.isbn && <div><span className="text-muted-foreground block">ISBN</span><strong>{product.isbn}</strong></div>}
+                  {product.author && <div><span className="text-muted-foreground block">Author</span><strong>{product.author}</strong></div>}
+                  {product.edition && <div><span className="text-muted-foreground block">Edition</span><strong>{product.edition}</strong></div>}
+                </div>
+              )}
             </div>
           </div>
 
@@ -192,6 +233,7 @@ export function ProductDetail() {
               
               <div className="text-3xl font-extrabold text-primary mb-6">
                 RM {numericPrice.toFixed(2)} 
+                {product.pricingUnit && product.pricingUnit !== "ITEM" && <span className="text-sm font-normal text-muted-foreground"> / {product.pricingUnit.toLowerCase()}</span>}
                 {product.isNegotiable && <span className="text-sm font-normal text-muted-foreground ml-2">(Negotiable)</span>}
               </div>
 
@@ -218,7 +260,21 @@ export function ProductDetail() {
                   <span className="text-muted-foreground block mb-1 flex items-center gap-1"><MapPin className="w-4 h-4"/> Location</span>
                   <span className="font-medium text-gray-900">{product.location || "Main Campus"}</span>
                 </div>
+                {product.type === "PRODUCT" && <div><span className="text-muted-foreground block mb-1">Available</span><span className="font-medium">{product.quantity ?? 1}</span></div>}
+                {product.serviceDuration && <div><span className="text-muted-foreground block mb-1">Duration</span><span className="font-medium">{product.serviceDuration} min</span></div>}
+                {product.availabilityNote && <div className="col-span-2"><span className="text-muted-foreground block mb-1">Availability</span><span className="font-medium">{product.availabilityNote}</span></div>}
               </div>
+
+              {product.sellerId !== user?.id && (
+                <div className="space-y-3 mb-3">
+                  {product.type === "PRODUCT" && (product.quantity ?? 1) > 1 && (
+                    <div className="flex items-center gap-3"><span className="text-sm font-medium">Quantity</span><Input className="w-24" type="number" min="1" max={product.quantity} value={quantity} onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))} /></div>
+                  )}
+                  <Button onClick={handleReserve} disabled={reserveLoading || reserved} className="w-full h-12 rounded-xl font-bold bg-green-600 hover:bg-green-700">
+                    {reserved ? "Reserved — seller notified" : reserveLoading ? "Reserving..." : product.type === "PRODUCT" ? "Reserve item" : product.type === "COURSE" ? "Enroll in course" : "Book service"}
+                  </Button>
+                </div>
+              )}
 
               <Button 
                 onClick={handleStartChat}
@@ -251,11 +307,15 @@ export function ProductDetail() {
                     {product.seller?.isVerified && <ShieldCheck className="w-5 h-5 text-green-600" />}
                   </div>
                   <p className="text-sm text-muted-foreground">{product.seller?.faculty || "Student"}</p>
+                  <p className="text-xs font-medium text-primary mt-1">{product.seller?.sellerType === "SHOP" ? "Campus shop" : product.seller?.sellerType === "SERVICE_PROVIDER" ? "Service provider" : "Casual seller"}</p>
+                  <p className="text-sm text-amber-700 flex items-center gap-1 mt-1"><Star className="w-4 h-4 fill-amber-400 text-amber-400" /> {product.seller?.rating?.toFixed(1) || "New"} ({product.seller?.ratingCount ?? 0} reviews)</p>
                   {product.seller?.campusArea && (
                     <p className="text-xs text-muted-foreground mt-0.5">{product.seller.campusArea}</p>
                   )}
                 </div>
               </div>
+              {product.seller?.email && <p className="text-xs text-muted-foreground border-t pt-3">Contact: {product.seller.email}</p>}
+              {product.sellerId !== user?.id && <Button variant="ghost" size="sm" onClick={handleBlockSeller} className="mt-2 text-muted-foreground">Block seller</Button>}
             </div>
 
             {/* Meetup preference / Safety Tips */}
@@ -264,6 +324,7 @@ export function ProductDetail() {
                 <ShieldCheck className="w-5 h-5" /> Safety & Meetup
               </div>
               <ul className="text-sm text-red-900 space-y-2">
+                {product.meetupPoint && <li><strong>Verified point:</strong> {product.meetupPoint.name} — {product.meetupPoint.description}</li>}
                 {product.meetupPreference && (
                   <li>
                     <strong>Meetup Area:</strong> {product.meetupPreference}
@@ -273,7 +334,7 @@ export function ProductDetail() {
                 <li>• Inspect the item thoroughly before paying.</li>
                 <li>• Do not transfer money in advance.</li>
               </ul>
-              <button className="flex items-center gap-1 text-xs text-red-600 font-semibold mt-4 hover:underline">
+              <button onClick={handleReport} className="flex items-center gap-1 text-xs text-red-600 font-semibold mt-4 hover:underline">
                 <Flag className="w-3 h-3" /> Report this listing
               </button>
             </div>
