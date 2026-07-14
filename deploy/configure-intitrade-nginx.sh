@@ -2,13 +2,20 @@
 set -Eeuo pipefail
 
 CONFIG_FILE="${NGINX_CONFIG_FILE:-/etc/nginx/sites-enabled/university-marketplace}"
+BACKUP_DIR="${NGINX_BACKUP_DIR:-/var/backups/nginx}"
 
 if [[ ! -f "${CONFIG_FILE}" ]] || ! grep -q "server_name intitrade.shop" "${CONFIG_FILE}"; then
   echo "IntiTrade Nginx configuration was not found at ${CONFIG_FILE}" >&2
   exit 1
 fi
 
-BACKUP_FILE="${CONFIG_FILE}.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "${BACKUP_DIR}"
+
+# Older deployments placed backups inside sites-enabled, where Nginx loaded
+# them as duplicate virtual hosts. Move those files out before validation.
+find "$(dirname "${CONFIG_FILE}")" -maxdepth 1 -type f -name "$(basename "${CONFIG_FILE}").bak.*" -exec mv -t "${BACKUP_DIR}" -- {} + 2>/dev/null || true
+
+BACKUP_FILE="${BACKUP_DIR}/$(basename "${CONFIG_FILE}").$(date -u +%Y%m%dT%H%M%SZ).conf"
 cp --preserve=mode,ownership,timestamps "${CONFIG_FILE}" "${BACKUP_FILE}"
 
 if ! grep -q "client_max_body_size" "${CONFIG_FILE}"; then

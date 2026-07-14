@@ -34,7 +34,9 @@ if [[ -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-pg_dump --dbname="${DATABASE_URL}" --format=custom --file="${TEMP_DIR}/database.dump"
+# Prisma accepts a `schema` URL parameter that libpq/pg_dump does not.
+DUMP_DATABASE_URL="$(node -e 'const url = new URL(process.env.DATABASE_URL); url.searchParams.delete("schema"); process.stdout.write(url.toString())')"
+pg_dump --dbname="${DUMP_DATABASE_URL}" --format=custom --file="${TEMP_DIR}/database.dump"
 
 if [[ -d "${PROJECT_DIR}/backend/uploads" ]]; then
   tar -C "${PROJECT_DIR}/backend" -czf "${TEMP_DIR}/uploads.tar.gz" uploads
