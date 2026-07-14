@@ -7,6 +7,7 @@ dotenv.config();
 const conn = new Client();
 const remoteProjectDir = process.env.SERVER_PROJECT_DIR || '/var/www/university-marketplace';
 const apiPort = Number.parseInt(process.env.SERVER_API_PORT || '4099', 10);
+const backupRemoteChanges = process.env.BACKUP_REMOTE_CHANGES === 'true';
 
 if (!/^\/[A-Za-z0-9._/-]+$/.test(remoteProjectDir) || !Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535) {
   throw new Error('Invalid SERVER_PROJECT_DIR or SERVER_API_PORT');
@@ -29,8 +30,14 @@ if (!config.host || !config.username || (!privateKeyPath && !process.env.SSH_PAS
 conn.on('ready', () => {
   console.log('SSH Client Connected. Starting Deployment...');
 
+  const prepareWorktree = backupRemoteChanges
+    ? `cd ${remoteProjectDir} && backup_dir=/var/backups/intitrade-predeploy/$(date -u +%Y%m%dT%H%M%SZ) && mkdir -p "$backup_dir" && git diff --binary > "$backup_dir/tracked-changes.patch" && { tar -czf "$backup_dir/untracked-conflicts.tar.gz" --ignore-failed-read .gitattributes deploy 2>/dev/null || true; } && git restore -- backend/package-lock.json frontend/package-lock.json frontend/src/app/pages/Login.tsx frontend/src/app/pages/Register.tsx && if [ -e .gitattributes ]; then mv .gitattributes "$backup_dir/"; fi && if [ -d deploy ]; then mv deploy "$backup_dir/"; fi && echo "Remote changes backed up to $backup_dir"`
+    : `cd ${remoteProjectDir} && test -d .git && git diff --quiet && git diff --cached --quiet`;
+
   const commands = [
-    // Refuse to destroy uncommitted production changes.
+    // Refuse dirty state by default. The explicit backup mode preserves the
+    // four known hotfix files and conflicting untracked deployment files.
+    prepareWorktree,
     `cd ${remoteProjectDir} && test -d .git && git diff --quiet && git diff --cached --quiet`,
     `cd ${remoteProjectDir} && git fetch origin main && if git show-ref --verify --quiet refs/heads/main; then git switch main; else git switch -c main --track origin/main; fi && git merge --ff-only origin/main`,
     `cd ${remoteProjectDir} && PROJECT_DIR=${remoteProjectDir} bash deploy/configure-production-env.sh`,
