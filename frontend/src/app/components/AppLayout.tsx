@@ -45,11 +45,22 @@ export function AppLayout() {
 
   useEffect(() => {
     if (!user) { setNotifications([]); setUnreadMessages(0); return; }
-    void Promise.all([api.get("/community/notifications"), api.get("/conversations")]).then(([notificationResponse, conversationResponse]) => {
-      setNotifications(notificationResponse.data.notifications || []);
-      const unread = (conversationResponse.data.conversations || []).flatMap((conversation: any) => conversation.messages || []).filter((message: any) => !message.readAt && message.sender?.id !== user.id).length;
-      setUnreadMessages(unread);
-    }).catch(() => undefined);
+    const refreshIndicators = () => {
+      void Promise.all([api.get("/community/notifications"), api.get("/conversations")]).then(([notificationResponse, conversationResponse]) => {
+        setNotifications(notificationResponse.data.notifications || []);
+        const unread = (conversationResponse.data.conversations || []).flatMap((conversation: any) => conversation.messages || []).filter((message: any) => !message.readAt && message.sender?.id !== user.id).length;
+        setUnreadMessages(unread);
+      }).catch(() => undefined);
+    };
+    refreshIndicators();
+    const intervalId = window.setInterval(refreshIndicators, 20_000);
+    window.addEventListener("focus", refreshIndicators);
+    window.addEventListener("intitrade:messages-changed", refreshIndicators);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshIndicators);
+      window.removeEventListener("intitrade:messages-changed", refreshIndicators);
+    };
   }, [user?.id]);
 
   const openNotifications = async () => {

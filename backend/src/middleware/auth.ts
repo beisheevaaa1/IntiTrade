@@ -13,7 +13,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   try {
     const payload = verifyAccessToken(token);
     const user = await prisma.user.findUnique({ where: { id: payload.id } });
-    if (!user || user.isBlocked) {
+    if (!user || user.isBlocked || payload.tokenVersion !== user.tokenVersion) {
       return res.status(401).json({ message: "Account is unavailable" });
     }
     req.user = { id: user.id, role: user.role };
@@ -40,8 +40,8 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
   if (!token) return next();
   try {
     const payload = verifyAccessToken(token);
-    const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id: true, role: true, isBlocked: true } });
-    if (user && !user.isBlocked) req.user = { id: user.id, role: user.role };
+    const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id: true, role: true, isBlocked: true, tokenVersion: true } });
+    if (user && !user.isBlocked && payload.tokenVersion === user.tokenVersion) req.user = { id: user.id, role: user.role };
   } catch {
     // Public routes remain public when a stale token is supplied.
   }

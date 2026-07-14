@@ -1,165 +1,149 @@
-import React from "react";
-import { Link } from "react-router";
-import { Plus, Search, MapPin, Clock, Filter, ArrowRight } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ArrowRight, Clock, Loader2, Plus, Search } from "lucide-react";
+import { Link, useNavigate } from "react-router";
+import { api } from "../../api/client";
+import { useAuth } from "../../state/AuthContext";
+import type { Category, WantAd } from "../../types";
+import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Badge } from "../components/ui/badge";
-
-const mockWantAds = [
-  {
-    id: "1",
-    title: "Lab Coat (Size M)",
-    description: "Need a standard white lab coat for chemistry practicals. Must be in good condition without major stains. Needed by next week.",
-    budget: 30,
-    category: "Academic Materials",
-    date: "2 hours ago",
-    user: { initials: "JD", name: "John Doe", role: "Student" },
-    matches: 0
-  },
-  {
-    id: "2",
-    title: "Graphing Calculator (TI-84 Plus)",
-    description: "Looking for a working Texas Instruments TI-84 Plus CE. Battery should be in good condition. Willing to negotiate slightly based on condition.",
-    budget: 200,
-    category: "Academic Materials",
-    date: "1 day ago",
-    user: { initials: "SL", name: "Sarah L.", role: "Student" },
-    matches: 2
-  },
-  {
-    id: "3",
-    title: "Mini Fridge for Dorm",
-    description: "Looking for a small refrigerator for my dorm room. Needs to be clean and working properly. I can pick it up from your block.",
-    budget: 150,
-    category: "Room Essentials",
-    date: "2 days ago",
-    user: { initials: "AK", name: "Ahmad K.", role: "Student" },
-    matches: 1
-  },
-  {
-    id: "4",
-    title: "Computer Networks 5th Edition",
-    description: "Textbook by Tanenbaum. Need it for the current semester. Highlighting inside is fine as long as pages aren't missing.",
-    budget: 60,
-    category: "Textbooks",
-    date: "3 days ago",
-    user: { initials: "WT", name: "Wei T.", role: "Student" },
-    matches: 0
-  },
-  {
-    id: "5",
-    title: "Monitor Stand / Riser",
-    description: "Looking for a basic wooden or metal monitor stand to improve ergonomics on my desk.",
-    budget: 25,
-    category: "Furniture",
-    date: "4 days ago",
-    user: { initials: "ML", name: "Mei Ling", role: "Staff" },
-    matches: 0
-  },
-  {
-    id: "6",
-    title: "Badminton Racket",
-    description: "Need a decent intermediate level racket. Yonex or Li-Ning preferred. Strings should be intact.",
-    budget: 80,
-    category: "Sports & Hobbies",
-    date: "5 days ago",
-    user: { initials: "RV", name: "Raj V.", role: "Student" },
-    matches: 3
-  }
-];
+import { Textarea } from "../components/ui/textarea";
 
 export function WantAds() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [wantAds, setWantAds] = useState<WantAd[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("newest");
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadWantAds = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get("/want-ads", { params: { q: query || undefined, sort: sort === "budget" ? "budget" : undefined } });
+      setWantAds(response.data.wantAds ?? []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadWantAds();
+  }, [sort]);
+
+  useEffect(() => {
+    api.get("/listings/categories").then((response) => {
+      const nextCategories = response.data.categories ?? [];
+      setCategories(nextCategories);
+      if (nextCategories.length) setCategoryId((current) => current || nextCategories[0].id);
+    });
+  }, []);
+
+  const openForm = () => {
+    if (!user) return navigate("/login");
+    setShowForm(true);
+  };
+
+  const createWantAd = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const response = await api.post("/want-ads", { title, description, maxPrice: Number(maxPrice), categoryId });
+      setWantAds((current) => [response.data.wantAd, ...current]);
+      setTitle("");
+      setDescription("");
+      setMaxPrice("");
+      setShowForm(false);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Could not post the request.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeWantAd = async (id: string) => {
+    await api.patch(`/want-ads/${id}/status`, { status: "CLOSED" });
+    setWantAds((current) => current.filter((wantAd) => wantAd.id !== id));
+  };
+
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50/50">
-      {/* Header section */}
-      <div className="bg-white border-b border-border py-8">
+    <main className="flex-1 bg-gray-50/50">
+      <section className="border-b bg-white py-8">
         <div className="container mx-auto px-4">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
             <div>
-              <h1 className="text-3xl font-bold text-foreground mb-2">Want Ads</h1>
-              <p className="text-muted-foreground">Help fellow INTI members find what they need, or post your own request.</p>
+              <h1 className="text-3xl font-bold">Want Ads</h1>
+              <p className="mt-2 text-muted-foreground">Ask the community for an item, course, or service you need.</p>
             </div>
-            <Link to="/create-want-ad">
-              <Button className="gap-2">
-                <Plus className="h-4 w-4" /> Post a Request
-              </Button>
-            </Link>
+            <Button onClick={openForm} className="gap-2"><Plus className="h-4 w-4" /> Post a request</Button>
           </div>
-          
-          <div className="flex flex-col sm:flex-row gap-3 mt-8">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search requests..." className="pl-9 bg-gray-50" />
+
+          <form className="mt-8 flex max-w-2xl flex-col gap-3 sm:flex-row" onSubmit={(event) => { event.preventDefault(); void loadWantAds(); }}>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search requests..." className="pl-9" />
             </div>
-            <Button variant="outline" className="gap-2 sm:w-auto w-full">
-              <Filter className="h-4 w-4" /> Filters
-            </Button>
+            <Button type="submit" variant="outline">Search</Button>
+            <select value={sort} onChange={(event) => setSort(event.target.value)} className="h-11 rounded-xl border bg-white px-3 text-sm">
+              <option value="newest">Newest first</option>
+              <option value="budget">Highest budget</option>
+            </select>
+          </form>
+        </div>
+      </section>
+
+      <div className="container mx-auto px-4 py-8">
+        {showForm && (
+          <form onSubmit={createWantAd} className="mb-8 space-y-4 rounded-2xl border bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Post a request</h2><Button type="button" variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button></div>
+            {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+            <Input required minLength={4} maxLength={120} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What are you looking for?" />
+            <Textarea required minLength={10} maxLength={1500} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe condition, timing, or other details." />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input required type="number" min="0.01" step="0.01" value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)} placeholder="Maximum budget (RM)" />
+              <select required value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="h-11 rounded-xl border bg-white px-3 text-sm">
+                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              </select>
+            </div>
+            <Button disabled={saving || !categoryId}>{saving ? "Posting..." : "Post request"}</Button>
+          </form>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+        ) : wantAds.length === 0 ? (
+          <div className="rounded-2xl border bg-white p-10 text-center"><p className="font-semibold">No matching requests yet.</p></div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {wantAds.map((ad) => (
+              <article key={ad.id} className="flex h-full flex-col rounded-xl border bg-white p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <h2 className="text-lg font-bold leading-tight">{ad.title}</h2>
+                  <span className="whitespace-nowrap rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-primary">Max RM {Number(ad.maxPrice).toFixed(2)}</span>
+                </div>
+                <Badge variant="secondary" className="mt-3 w-fit">{ad.category.name}</Badge>
+                <p className="mt-4 flex-1 whitespace-pre-line text-sm text-muted-foreground">{ad.description}</p>
+                <div className="mt-5 flex items-center gap-2 border-t pt-4 text-xs text-muted-foreground">
+                  <Clock className="h-3.5 w-3.5" /> {new Date(ad.createdAt).toLocaleDateString()} · {ad.user.name}
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <Button asChild className="flex-1"><Link to={`/create-listing?wanted=${encodeURIComponent(ad.title)}`}>I have this <ArrowRight className="ml-2 h-4 w-4" /></Link></Button>
+                  {user?.id === ad.userId && <Button variant="outline" onClick={() => closeWantAd(ad.id)}>Close</Button>}
+                </div>
+              </article>
+            ))}
           </div>
-        </div>
+        )}
       </div>
-
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-8 flex-1">
-        <div className="flex justify-between items-center mb-6">
-          <p className="text-sm font-medium text-muted-foreground">{mockWantAds.length} Active Requests</p>
-          <select className="text-sm border-0 bg-transparent font-medium text-foreground cursor-pointer focus:ring-0">
-            <option>Newest First</option>
-            <option>Highest Budget</option>
-            <option>Lowest Budget</option>
-          </select>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {mockWantAds.map((ad) => (
-            <div key={ad.id} className="bg-white rounded-xl border border-border overflow-hidden hover:shadow-md transition-shadow flex flex-col h-full">
-              <div className="p-5 flex-1 flex flex-col">
-                <div className="flex justify-between items-start gap-4 mb-3">
-                  <h3 className="font-bold text-lg text-foreground line-clamp-2 leading-tight">{ad.title}</h3>
-                  <div className="bg-red-50 text-primary font-bold px-3 py-1 rounded-full whitespace-nowrap text-sm">
-                    Max RM {ad.budget}
-                  </div>
-                </div>
-                
-                <Badge variant="secondary" className="w-fit mb-3 bg-gray-100 text-gray-700 hover:bg-gray-100">{ad.category}</Badge>
-                
-                <p className="text-sm text-muted-foreground line-clamp-3 mb-4 flex-1">
-                  {ad.description}
-                </p>
-                
-                <div className="flex items-center gap-2 mt-auto text-xs text-gray-500 mb-4">
-                  <Clock className="h-3.5 w-3.5" />
-                  <span>Posted {ad.date}</span>
-                  <span className="mx-1">•</span>
-                  <span>{ad.matches} matches</span>
-                </div>
-                
-                <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600">
-                    {ad.user.initials}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900 leading-none mb-1">{ad.user.name}</p>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider">{ad.user.role}</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="border-t border-border grid grid-cols-2 bg-gray-50/50">
-                <Button variant="ghost" className="rounded-none border-r border-border hover:bg-red-50 hover:text-primary text-gray-600 font-medium h-12">
-                  I Have This
-                </Button>
-                <Button variant="ghost" className="rounded-none hover:bg-gray-100 text-gray-600 font-medium h-12 gap-2">
-                  Message
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-        
-        <div className="mt-12 text-center">
-          <Button variant="outline" className="rounded-full px-8">Load More Requests</Button>
-        </div>
-      </div>
-    </div>
+    </main>
   );
 }

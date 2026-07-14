@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ShieldCheck, ArrowLeft, Mail, Loader2 } from "lucide-react";
+import { ShieldCheck, ArrowLeft, Eye, EyeOff, Mail, Loader2 } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
 
 export function Register() {
@@ -10,16 +10,23 @@ export function Register() {
   const { register } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [verificationToken, setVerificationToken] = useState("");
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
@@ -28,11 +35,9 @@ export function Register() {
 
     setLoading(true);
     try {
-      const token = await register(name, email, password);
-      if (token) {
-        setVerificationToken(token);
-      }
-      setIsSubmitted(true);
+      const requiresVerification = await register(name, email, phone, password);
+      if (requiresVerification) setIsSubmitted(true);
+      else navigate("/");
     } catch (err: any) {
       console.error(err);
       setError(err.response?.data?.message || "Registration failed. Try again.");
@@ -52,14 +57,8 @@ export function Register() {
           <p className="mt-2 text-muted-foreground">
             We've sent a verification code to your email address to verify your account.
           </p>
-          {verificationToken && (
-            <div className="mt-4 p-3 bg-yellow-50 text-yellow-800 rounded-xl font-mono text-sm border border-yellow-200 flex flex-col items-center gap-1">
-              <span className="text-[10px] text-yellow-600 font-sans font-bold uppercase tracking-wider">Demo Code</span>
-              <span className="font-bold break-all select-all block w-full text-center">{verificationToken}</span>
-            </div>
-          )}
           <div className="pt-6">
-            <Link to={`/verify-email?token=${verificationToken}`}>
+            <Link to="/verify-email">
               <Button className="w-full rounded-xl h-12">
                 Enter Verification Page
               </Button>
@@ -116,7 +115,7 @@ export function Register() {
             </div>
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 mb-1">
-                INTI Institutional Email
+                Email
               </label>
               <Input
                 id="email-address"
@@ -126,37 +125,97 @@ export function Register() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@student.newinti.edu.my"
+                placeholder="you@example.com"
               />
-              <p className="text-xs text-muted-foreground mt-1">Must be an active @inti.edu.my or @student.newinti.edu.my address</p>
+            </div>
+            <div>
+              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+                Phone number
+              </label>
+              <Input
+                id="phone"
+                name="phone"
+                type="tel"
+                autoComplete="tel"
+                required
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+60 12-345 6789"
+              />
+              <p className="text-xs text-muted-foreground mt-1">It stays private unless you enable it for a listing.</p>
             </div>
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
                 Password
               </label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  aria-describedby="password-requirement"
+                  className="pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-xl text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+              <p
+                id="password-requirement"
+                className={`mt-1 text-xs ${password.length === 0 ? "text-muted-foreground" : password.length >= 8 ? "text-green-600" : "text-red-600"}`}
+                aria-live="polite"
+              >
+                {password.length === 0
+                  ? "Use at least 8 characters"
+                  : password.length >= 8
+                    ? "Password length is valid"
+                    : `${8 - password.length} more character${8 - password.length === 1 ? "" : "s"} required`}
+              </p>
             </div>
             <div>
               <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700 mb-1">
                 Confirm Password
               </label>
-              <Input
-                id="confirm-password"
-                name="confirm-password"
-                type="password"
-                required
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-              />
+              <div className="relative">
+                <Input
+                  id="confirm-password"
+                  name="confirm-password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((visible) => !visible)}
+                  aria-label={showConfirmPassword ? "Hide confirmed password" : "Show confirmed password"}
+                  aria-pressed={showConfirmPassword}
+                  className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-xl text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                >
+                  {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
+              {confirmPassword.length > 0 && (
+                <p className={`mt-1 text-xs ${confirmPassword === password ? "text-green-600" : "text-red-600"}`} aria-live="polite">
+                  {confirmPassword === password ? "Passwords match" : "Passwords do not match"}
+                </p>
+              )}
             </div>
           </div>
 
@@ -172,7 +231,7 @@ export function Register() {
                   Creating account...
                 </>
               ) : (
-                "Register & Verify Email"
+                "Create account"
               )}
             </Button>
           </div>
@@ -182,8 +241,8 @@ export function Register() {
           <div className="bg-blue-50 p-4 rounded-xl flex gap-3 items-start border border-blue-100">
             <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
             <div>
-              <h4 className="text-sm font-semibold text-gray-900">Why do we need this?</h4>
-              <p className="text-xs text-gray-600 mt-1">To maintain a safe and trustworthy environment, we require all users to verify they are active members of INTI International University.</p>
+              <h4 className="text-sm font-semibold text-gray-900">Your phone is private by default</h4>
+              <p className="text-xs text-gray-600 mt-1">You decide separately for every listing whether buyers can see it.</p>
             </div>
           </div>
           

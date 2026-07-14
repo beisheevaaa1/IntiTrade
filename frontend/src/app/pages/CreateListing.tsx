@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { renderMarkdown } from "../../utils/renderMarkdown";
 import { ArrowLeft, Upload, X, Image as ImageIcon, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -34,6 +34,7 @@ const locationsList = [
 export function CreateListing() {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const { user, reloadUser, updateUser } = useAuth();
   
   // Form states
@@ -45,6 +46,7 @@ export function CreateListing() {
   const [location, setLocation] = useState("Student Center");
   const [meetupPreference, setMeetupPreference] = useState(locationsList[0]);
   const [isNegotiable, setIsNegotiable] = useState(false);
+  const [showPhone, setShowPhone] = useState(false);
   const [sellerType, setSellerType] = useState<SellerType>(user?.sellerType ?? "CASUAL");
   const [quantity, setQuantity] = useState("1");
   const [isbn, setIsbn] = useState("");
@@ -127,6 +129,7 @@ export function CreateListing() {
           setCondition(l.condition);
           setLocation(l.location);
           setMeetupPreference(l.meetupPreference || "");
+          setShowPhone(Boolean(l.showPhone));
           setMeetupPointId(l.meetupPointId || "");
           setQuantity(String(l.quantity || 1));
           setIsbn(l.isbn || "");
@@ -143,8 +146,11 @@ export function CreateListing() {
           console.error("Error loading listing for edit:", err);
           setError("Failed to load listing details.");
         });
+    } else {
+      const wantedTitle = searchParams.get("wanted")?.trim();
+      if (wantedTitle) setTitle(wantedTitle.slice(0, 120));
     }
-  }, [navigate, id]);
+  }, [navigate, id, searchParams]);
 
   const convertPngToJpg = (file: File): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -192,66 +198,70 @@ export function CreateListing() {
   const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes("video");
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      let file = e.target.files[0];
-      
-      if (isVideoFile(file)) {
-        if (file.size > 100 * 1024 * 1024) {
-          alert("Video size must be less than 100MB");
-          return;
+    const selectedFiles = Array.from(e.target.files ?? []);
+    if (!selectedFiles.length) return;
+
+    setUploadingImage(true);
+    setError("");
+    const uploadedUrls = [...images];
+
+    try {
+      for (const selectedFile of selectedFiles) {
+        if (uploadedUrls.length >= 25) {
+          setError("A listing can contain up to 20 photos and 5 videos.");
+          break;
         }
-      } else if (isImageFile(file)) {
-        const currentPhotosCount = images.filter(url => !isVideoUrl(url)).length;
-        if (currentPhotosCount >= 20) {
-          alert("Maximum of 20 photos allowed");
-          return;
-        }
-        
-        if (file.size > 5 * 1024 * 1024) {
-          if (file.type === "image/png") {
-            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            const confirmConvert = window.confirm(
-              `Your PNG image is larger than 5MB (${sizeMB}MB). Would you like to automatically convert it to an optimized JPG to upload successfully?`
-            );
-            if (confirmConvert) {
-              try {
-                file = await convertPngToJpg(file);
-              } catch (err) {
-                console.error("Conversion failed:", err);
-                alert("Failed to convert image. Please upload a smaller file.");
-                return;
-              }
-            } else {
-              alert("Photo size must be less than 5MB");
-              return;
-            }
-          } else {
-            alert("Photo size must be less than 5MB");
-            return;
+
+        let file = selectedFile;
+        const photoCount = uploadedUrls.filter((url) => !isVideoUrl(url)).length;
+        const videoCount = uploadedUrls.filter(isVideoUrl).length;
+
+        if (isVideoFile(file)) {
+          if (videoCount >= 5) {
+            setError("A listing can contain up to 5 videos.");
+            continue;
           }
+          if (file.size > 100 * 1024 * 1024) {
+            setError(`${file.name}: video size must be less than 100MB.`);
+            continue;
+          }
+        } else if (isImageFile(file)) {
+          if (photoCount >= 20) {
+            setError("A listing can contain up to 20 photos.");
+            continue;
+          }
+          if (file.size > 5 * 1024 * 1024) {
+            if (file.type !== "image/png") {
+              setError(`${file.name}: photo size must be less than 5MB.`);
+              continue;
+            }
+            const shouldConvert = window.confirm(`${file.name} is larger than 5MB. Convert it to an optimized JPG?`);
+            if (!shouldConvert) continue;
+            try {
+              file = await convertPngToJpg(file);
+            } catch {
+              setError(`${file.name}: conversion failed. Please upload a smaller image.`);
+              continue;
+            }
+          }
+        } else {
+          setError(`${file.name}: only images and videos are allowed.`);
+          continue;
         }
-      } else {
-        alert("Only images and videos are allowed");
-        return;
-      }
-      
-      const formData = new FormData();
-      formData.append("file", file);
 
-      setUploadingImage(true);
-      setError("");
-
-      try {
-        const res = await api.post("/uploads", formData, {
-          headers: { "Content-Type": "multipart/form-data" }
-        });
-        setImages([...images, res.data.url]);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.response?.data?.message || "Failed to upload file. Please try again.");
-      } finally {
-        setUploadingImage(false);
+        const formData = new FormData();
+        formData.append("file", file);
+        try {
+          const response = await api.post("/uploads", formData, { headers: { "Content-Type": "multipart/form-data" } });
+          uploadedUrls.push(response.data.url);
+          setImages([...uploadedUrls]);
+        } catch (err: any) {
+          setError(err.response?.data?.message || `${file.name}: upload failed.`);
+        }
       }
+    } finally {
+      setUploadingImage(false);
+      e.target.value = "";
     }
   };
 
@@ -283,6 +293,7 @@ export function CreateListing() {
         location,
         meetupPreference,
         isNegotiable,
+        showPhone,
         meetupPointId: meetupPointId || null,
         quantity: type === "PRODUCT" ? Number(quantity) : 1,
         isbn: isbn || undefined,
@@ -427,7 +438,8 @@ export function CreateListing() {
                     <label className="relative aspect-square rounded-xl border-2 border-dashed border-gray-300 hover:border-primary hover:bg-red-50/50 transition-colors flex flex-col items-center justify-center cursor-pointer">
                       <input 
                         type="file" 
-                        accept="image/*,video/*" 
+                        accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm,video/ogg"
+                        multiple
                         className="hidden" 
                         disabled={uploadingImage}
                         onChange={handleImageUpload}
@@ -725,6 +737,18 @@ export function CreateListing() {
                       )
                     })}
                   </RadioGroup>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
+                    <div className="pr-4">
+                      <Label className="text-base font-semibold">Show my phone number</Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Off by default. When enabled, your registered phone is visible on this listing.
+                      </p>
+                    </div>
+                    <Switch checked={showPhone} onCheckedChange={setShowPhone} />
+                  </div>
                 </div>
 
                 <div className="space-y-2">

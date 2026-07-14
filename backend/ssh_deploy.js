@@ -1,50 +1,57 @@
 import { Client } from 'ssh2';
 import dotenv from 'dotenv';
+import fs from 'node:fs';
 
 dotenv.config();
 
 const conn = new Client();
+const remoteProjectDir = process.env.SERVER_PROJECT_DIR || '/var/www/university-marketplace';
+const apiPort = Number.parseInt(process.env.SERVER_API_PORT || '4099', 10);
 
+if (!/^\/[A-Za-z0-9._/-]+$/.test(remoteProjectDir) || !Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535) {
+  throw new Error('Invalid SERVER_PROJECT_DIR or SERVER_API_PORT');
+}
+
+const privateKeyPath = process.env.SSH_PRIVATE_KEY_PATH;
 const config = {
-  host: process.env.SSH_HOST || 'localhost',
+  host: process.env.SSH_HOST,
   port: parseInt(process.env.SSH_PORT || '22', 10),
-  username: process.env.SSH_USER || 'root',
-  password: process.env.SSH_PASSWORD
+  username: process.env.SSH_USER,
+  ...(privateKeyPath
+    ? { privateKey: fs.readFileSync(privateKeyPath) }
+    : { password: process.env.SSH_PASSWORD })
 };
+
+if (!config.host || !config.username || (!privateKeyPath && !process.env.SSH_PASSWORD)) {
+  throw new Error('Set SSH_HOST, SSH_USER and either SSH_PRIVATE_KEY_PATH or SSH_PASSWORD');
+}
 
 conn.on('ready', () => {
   console.log('SSH Client Connected. Starting Deployment...');
 
   const commands = [
-    // 1. Бэкап переменных окружения во временную папку
-    'mkdir -p /tmp/marketplace_backup',
-    'cp /var/www/university-marketplace/backend/.env /tmp/marketplace_backup/backend_env 2>/dev/null || true',
-    'cp /var/www/university-marketplace/frontend/.env /tmp/marketplace_backup/frontend_env 2>/dev/null || true',
+    // Refuse to destroy uncommitted production changes.
+    `cd ${remoteProjectDir} && test -d .git && git diff --quiet && git diff --cached --quiet`,
+    `cd ${remoteProjectDir} && git fetch origin main && if git show-ref --verify --quiet refs/heads/main; then git switch main; else git switch -c main --track origin/main; fi && git merge --ff-only origin/main`,
+    `cd ${remoteProjectDir} && PROJECT_DIR=${remoteProjectDir} bash deploy/configure-production-env.sh`,
 
-    // 2. Инициализация Git, если ее нет, и обновление кода
-    'cd /var/www/university-marketplace && [ -d .git ] || (git init && git remote add origin https://github.com/beisheevaaa1/IntiTrade.git)',
-    'cd /var/www/university-marketplace && git fetch origin main && git reset --hard origin/main',
+    // Reproducible installs and builds.
+    `cd ${remoteProjectDir}/backend && npm ci --no-audit --no-fund`,
+    `cd ${remoteProjectDir}/backend && npm run build`,
+    `cd ${remoteProjectDir}/backend && npm test`,
+    `cd ${remoteProjectDir}/backend && node --input-type=module -e "await import('./dist/env.js')"`,
+    `cd ${remoteProjectDir}/frontend && npm ci --no-audit --no-fund`,
+    `cd ${remoteProjectDir}/frontend && npm run typecheck && npm run build`,
+    `cd ${remoteProjectDir} && bash deploy/configure-intitrade-nginx.sh`,
 
-    // 3. Восстановление переменных окружения
-    'cp /tmp/marketplace_backup/backend_env /var/www/university-marketplace/backend/.env 2>/dev/null || true',
-    'cp /tmp/marketplace_backup/frontend_env /var/www/university-marketplace/frontend/.env 2>/dev/null || true',
-    'rm -rf /tmp/marketplace_backup',
+    // Back up production data, then apply checked-in migrations.
+    `cd ${remoteProjectDir} && PROJECT_DIR=${remoteProjectDir} bash deploy/backup-intitrade.sh`,
+    `cd ${remoteProjectDir}/backend && npx prisma migrate deploy`,
 
-    // 4. Сборка Backend и применение миграций
-    'cd /var/www/university-marketplace/backend && npm install --no-audit --no-fund',
-    'cd /var/www/university-marketplace/backend && npx prisma generate',
-    'cd /var/www/university-marketplace/backend && npx prisma migrate deploy',
-    'cd /var/www/university-marketplace/backend && npm run build',
-
-    // 5. Сборка Frontend
-    'cd /var/www/university-marketplace/frontend && npm install --no-audit --no-fund',
-    'cd /var/www/university-marketplace/frontend && npm run build',
-
-    // 6. Перезапуск API в PM2
-    'pm2 restart university-marketplace-api || pm2 start dist/index.js --name "university-marketplace-api" --cwd "/var/www/university-marketplace/backend"',
+    // Restart and verify the local-only API.
+    `pm2 restart university-marketplace-api --update-env || pm2 start dist/index.js --name "university-marketplace-api" --cwd "${remoteProjectDir}/backend"`,
+    `curl --fail --silent --show-error http://127.0.0.1:${apiPort}/api/health >/dev/null`,
     'pm2 save',
-    
-    // 7. Итоговый статус
     'pm2 list'
   ];
 
@@ -70,7 +77,10 @@ function executeCommands(list) {
 
     stream.on('close', (code, signal) => {
       if (code !== 0) {
-        console.warn(`Command exited with code: ${code}`);
+        console.error(`Deployment stopped: command exited with code ${code}${signal ? ` (${signal})` : ''}`);
+        conn.end();
+        process.exitCode = code || 1;
+        return;
       }
       executeCommands(list);
     }).on('data', (data) => {
@@ -80,3 +90,8 @@ function executeCommands(list) {
     });
   });
 }
+
+conn.on('error', (error) => {
+  console.error('SSH connection failed:', error.message);
+  process.exitCode = 1;
+});

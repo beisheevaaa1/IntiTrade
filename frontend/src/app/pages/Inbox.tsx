@@ -18,6 +18,7 @@ import {
   Zap,
   Eye,
   Shield,
+  ShieldAlert,
   Palette,
   Check
 } from "lucide-react";
@@ -55,6 +56,8 @@ export function Inbox() {
   const [offerAmount, setOfferAmount] = useState("");
   const [showOffer, setShowOffer] = useState(false);
   const [pendingAttachmentUrl, setPendingAttachmentUrl] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [sendError, setSendError] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
@@ -80,7 +83,7 @@ export function Inbox() {
 
   // Typing state
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Attachment Switcher Modal State
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
@@ -264,7 +267,7 @@ export function Inbox() {
   }, [isPartnerTyping]);
 
   const handleSendMessage = async (textToSend: string, attachmentUrl = pendingAttachmentUrl, offer = offerAmount) => {
-    if ((!textToSend.trim() && !attachmentUrl && !offer) || !activeConversation) return;
+    if ((!textToSend.trim() && !attachmentUrl && !offer) || !activeConversation) return false;
 
     const text = textToSend.trim();
 
@@ -274,19 +277,33 @@ export function Inbox() {
     }
 
     try {
-      if (socketRef.current) {
-        socketRef.current.emit("message:send", {
-          conversationId: activeConversation.id,
-          body: text,
-          attachmentUrl: attachmentUrl || undefined,
-          offerAmount: offer ? Number(offer) : undefined
+      setSendError("");
+      const payload = {
+        conversationId: activeConversation.id,
+        body: text,
+        attachmentUrl: attachmentUrl || undefined,
+        offerAmount: offer ? Number(offer) : undefined
+      };
+      if (socketRef.current?.connected) {
+        await new Promise<void>((resolve, reject) => {
+          socketRef.current!.timeout(10000).emit("message:send", payload, (timeoutError: Error | null, response?: { ok?: boolean; message?: unknown }) => {
+            if (timeoutError) return reject(new Error("The message timed out. Please try again."));
+            if (!response?.ok) {
+              const reason = typeof response?.message === "string" ? response.message : "The message was rejected.";
+              return reject(new Error(reason));
+            }
+            resolve();
+          });
         });
       } else {
-        await api.post(`/conversations/${activeConversation.id}/messages`, { body: text, attachmentUrl: attachmentUrl || undefined, offerAmount: offer ? Number(offer) : undefined });
+        await api.post(`/conversations/${activeConversation.id}/messages`, payload);
         fetchConversations(activeConversation.id);
       }
+      return true;
     } catch (err) {
       console.error("Failed to send message:", err);
+      setSendError(err instanceof Error ? err.message : "Failed to send the message. Please try again.");
+      return false;
     }
   };
 
@@ -305,13 +322,18 @@ export function Inbox() {
     }
   };
 
-  const onSendSubmit = (e: React.FormEvent) => {
+  const onSendSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    handleSendMessage(newMessage);
-    setNewMessage("");
-    setPendingAttachmentUrl("");
-    setOfferAmount("");
-    setShowOffer(false);
+    if (sendingMessage) return;
+    setSendingMessage(true);
+    const sent = await handleSendMessage(newMessage);
+    setSendingMessage(false);
+    if (sent) {
+      setNewMessage("");
+      setPendingAttachmentUrl("");
+      setOfferAmount("");
+      setShowOffer(false);
+    }
   };
 
   const handleChatImage = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,16 +351,35 @@ export function Inbox() {
     setSearchParams({ conversationId: conv.id });
     void api.patch(`/conversations/${conv.id}/read`).then(() => {
       setMessages((current) => current.map((message) => message.sender.id !== user?.id ? { ...message, readAt: message.readAt ?? new Date().toISOString() } : message));
+      window.dispatchEvent(new Event("intitrade:messages-changed"));
     });
   };
 
   const blockPartner = async () => {
     if (!activeConversation || !user) return;
     const partnerId = activeConversation.buyer.id === user.id ? activeConversation.seller.id : activeConversation.buyer.id;
-    if (!window.confirm(`Block ${getPartnerName(activeConversation)} and stop messaging?`)) return;
-    await api.post(`/community/blocks/${partnerId}`);
-    setActiveConversation(null);
-    void fetchConversations();
+    const reason = window.prompt(`Why do you want to block ${getPartnerName(activeConversation)}?`);
+    if (!reason?.trim()) return;
+    try {
+      await api.post(`/community/blocks/${partnerId}`, { reason: reason.trim() });
+      fetchConversations(activeConversation.id);
+    } catch (err) {
+      console.error("Failed to block user:", err);
+      alert("Failed to block user.");
+    }
+  };
+
+  const unblockPartner = async () => {
+    if (!activeConversation || !user) return;
+    const partnerId = activeConversation.buyer.id === user.id ? activeConversation.seller.id : activeConversation.buyer.id;
+    if (!window.confirm(`Unblock ${getPartnerName(activeConversation)}? You will be able to message each other again.`)) return;
+    try {
+      await api.delete(`/community/blocks/${partnerId}`);
+      fetchConversations(activeConversation.id);
+    } catch (err) {
+      console.error("Failed to unblock user:", err);
+      alert("Failed to unblock user.");
+    }
   };
 
   const handleResolveOffer = async (messageId: string, action: "accept" | "decline") => {
@@ -592,7 +633,25 @@ export function Inbox() {
                 </span>
               </div>
             </div>
-            <Button variant="ghost" size="sm" onClick={blockPartner} className="text-muted-foreground gap-1"><Shield className="w-4 h-4" /> Block</Button>
+            {activeConversation.isBlockedByMe ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={unblockPartner}
+                className="text-primary hover:bg-red-55 hover:text-primary gap-1 font-bold rounded-xl"
+              >
+                <ShieldAlert className="w-4 h-4 text-primary animate-pulse" /> Unblock
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={blockPartner}
+                className="text-muted-foreground hover:text-primary gap-1 rounded-xl"
+              >
+                <Shield className="w-4 h-4" /> Block
+              </Button>
+            )}
           </div>
 
           {/* Product Banner (Context Attachment) */}
@@ -654,12 +713,13 @@ export function Inbox() {
                     <Input 
                       placeholder="Enter OTP" 
                       value={otpValue} 
-                      onChange={(e) => setOtpValue(e.target.value.slice(0, 4))} 
-                      className="w-24 h-8 bg-white border-green-300 focus-visible:ring-green-500 rounded-lg text-center text-sm font-bold tracking-widest"
+                      inputMode="numeric"
+                      onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-28 h-8 bg-white border-green-300 focus-visible:ring-green-500 rounded-lg text-center text-sm font-bold tracking-widest"
                     />
                     <Button 
                       onClick={() => handleUpdateTxStatus(tx.id, "COMPLETED", otpValue)}
-                      disabled={otpValue.length !== 4 || txSubmitting}
+                      disabled={![4, 6].includes(otpValue.length) || txSubmitting}
                       className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 h-8 rounded-lg"
                     >
                       Verify & Complete
@@ -826,7 +886,7 @@ export function Inbox() {
           </div>
 
           {/* Message Presets */}
-          {messages.length === 0 && (
+          {messages.length === 0 && !activeConversation.isBlockedByMe && !activeConversation.hasBlockedMe && (
             <div className="px-4 py-2 bg-gray-50/50 border-t border-border overflow-x-auto flex gap-2 scrollbar-none shrink-0">
               {PRESETS.map((preset, index) => (
                 <button
@@ -840,29 +900,57 @@ export function Inbox() {
             </div>
           )}
 
-          {/* Message Input */}
-          <form onSubmit={onSendSubmit} className="p-3 sm:p-4 bg-white border-t border-border shrink-0">
-            {pendingAttachmentUrl && <div className="mb-2 flex items-center gap-2 bg-gray-50 rounded-xl p-2"><img src={mediaUrl(pendingAttachmentUrl)} className="w-14 h-14 object-cover rounded-lg" alt="Ready to send" /><span className="text-xs flex-1">Image ready to send</span><Button type="button" variant="ghost" size="icon" onClick={() => setPendingAttachmentUrl("")}><X className="w-4 h-4" /></Button></div>}
-            {showOffer && <div className="mb-2 flex items-center gap-2"><Input type="number" min="0.01" step="0.01" value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} placeholder="Offer amount in RM" /><Button type="button" variant="ghost" onClick={() => { setShowOffer(false); setOfferAmount(""); }}>Cancel</Button></div>}
-            <div className="flex items-center gap-2">
-              <label className="h-10 w-10 flex items-center justify-center cursor-pointer text-gray-400 hover:text-gray-600 shrink-0"><input type="file" accept="image/*" className="hidden" onChange={handleChatImage} /><ImageIcon className="h-5 w-5" /></label>
-              <Button type="button" variant="ghost" size="icon" onClick={() => setShowOffer(!showOffer)} title="Make an offer"><Tag className="h-5 w-5" /></Button>
-              <div className="flex-1 relative">
-                <Input 
-                  placeholder="Type a message..." 
-                  value={newMessage}
-                  onChange={handleNewMessageChange}
-                  className="w-full rounded-full pl-4 pr-10 bg-gray-100 border-transparent h-12"
-                />
-                <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1 text-gray-400 h-10 w-10 rounded-full hover:bg-transparent hover:text-gray-600">
-                  <Smile className="h-5 w-5" />
-                </Button>
+          {/* Block Banners or Message Input */}
+          {activeConversation.isBlockedByMe ? (
+            <div className="p-4 sm:p-6 bg-red-50/50 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 text-red-900 text-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="text-lg">🚫</span>
+                <div>
+                  <p className="font-bold">You have blocked this user</p>
+                  <p className="text-xs text-red-700">Unblock them to resume messaging.</p>
+                </div>
               </div>
-              <Button type="submit" className="h-12 w-12 rounded-full shrink-0 flex items-center justify-center p-0">
-                <Send className="h-5 w-5 ml-1" />
+              <Button
+                type="button"
+                onClick={unblockPartner}
+                className="bg-primary hover:bg-primary/95 text-white font-bold h-10 px-5 rounded-xl self-start sm:self-auto shadow-sm"
+              >
+                Unblock User
               </Button>
             </div>
-          </form>
+          ) : activeConversation.hasBlockedMe ? (
+            <div className="p-4 sm:p-6 bg-gray-50 border-t border-border flex items-center gap-2.5 shrink-0 text-gray-500 text-sm">
+              <span className="text-lg">🚫</span>
+              <div>
+                <p className="font-bold">This user is currently unavailable</p>
+                <p className="text-xs text-gray-400">Messaging is disabled for this conversation.</p>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={onSendSubmit} className="p-3 sm:p-4 bg-white border-t border-border shrink-0">
+              {sendError && <p role="alert" className="mb-2 text-sm text-red-600">{sendError}</p>}
+              {pendingAttachmentUrl && <div className="mb-2 flex items-center gap-2 bg-gray-50 rounded-xl p-2"><img src={mediaUrl(pendingAttachmentUrl)} className="w-14 h-14 object-cover rounded-lg" alt="Ready to send" /><span className="text-xs flex-1">Image ready to send</span><Button type="button" variant="ghost" size="icon" onClick={() => setPendingAttachmentUrl("")}><X className="w-4 h-4" /></Button></div>}
+              {showOffer && <div className="mb-2 flex items-center gap-2"><Input type="number" min="0.01" step="0.01" value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} placeholder="Offer amount in RM" /><Button type="button" variant="ghost" onClick={() => { setShowOffer(false); setOfferAmount(""); }}>Cancel</Button></div>}
+              <div className="flex items-center gap-2">
+                <label className="h-10 w-10 flex items-center justify-center cursor-pointer text-gray-400 hover:text-gray-600 shrink-0"><input type="file" accept="image/*" className="hidden" onChange={handleChatImage} /><ImageIcon className="h-5 w-5" /></label>
+                <Button type="button" variant="ghost" size="icon" onClick={() => setShowOffer(!showOffer)} title="Make an offer"><Tag className="h-5 w-5" /></Button>
+                <div className="flex-1 relative">
+                  <Input
+                    placeholder="Type a message..."
+                    value={newMessage}
+                    onChange={handleNewMessageChange}
+                    className="w-full rounded-full pl-4 pr-10 bg-gray-100 border-transparent h-12"
+                  />
+                  <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1 text-gray-400 h-10 w-10 rounded-full hover:bg-transparent hover:text-gray-600">
+                    <Smile className="h-5 w-5" />
+                  </Button>
+                </div>
+                <Button type="submit" disabled={sendingMessage} className="h-12 w-12 rounded-full shrink-0 flex items-center justify-center p-0">
+                  {sendingMessage ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5 ml-1" />}
+                </Button>
+              </div>
+            </form>
+          )}
         </div>
       ) : (
         <div className="hidden md:flex flex-grow items-center justify-center flex-col bg-gray-50/50">

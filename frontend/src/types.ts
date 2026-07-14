@@ -16,6 +16,7 @@ export type User = {
   campusArea?: string | null;
   bio?: string | null;
   avatarUrl?: string | null;
+  phone?: string | null;
   autoReplyEnabled?: boolean;
   autoReplyMessage?: string;
   autoReplyDelay?: number;
@@ -59,6 +60,7 @@ export type Listing = {
   viewsCount?: number;
   interestCount?: number;
   isNegotiable?: boolean;
+  showPhone?: boolean;
   meetupPreference?: string | null;
   meetupPointId?: string | null;
   meetupPoint?: MeetupPoint | null;
@@ -74,7 +76,7 @@ export type Listing = {
   sellerId: string;
   categoryId: string;
   createdAt: string;
-  seller: Pick<User, "id" | "name" | "email" | "faculty" | "campusArea" | "avatarUrl" | "sellerType" | "rating" | "ratingCount" | "showAcademicProfile" | "gpa" | "academicGrades" | "resume" | "projects"> & { isVerified?: boolean };
+  seller: Pick<User, "id" | "name" | "email" | "phone" | "faculty" | "campusArea" | "avatarUrl" | "sellerType" | "rating" | "ratingCount" | "showAcademicProfile" | "gpa" | "academicGrades" | "resume" | "projects"> & { isVerified?: boolean };
   category: Category;
   images: ListingImage[];
   _count?: { favorites: number; reports: number };
@@ -99,10 +101,12 @@ export type Conversation = {
   buyerId: string;
   sellerId: string;
   listing: Listing;
-  buyer: Pick<User, "id" | "name">;
-  seller: Pick<User, "id" | "name">;
+  buyer: Pick<User, "id" | "name" | "avatarUrl" | "lastActiveAt" | "showOnlineStatus">;
+  seller: Pick<User, "id" | "name" | "avatarUrl" | "lastActiveAt" | "showOnlineStatus">;
   messages: Message[];
   updatedAt: string;
+  isBlockedByMe?: boolean;
+  hasBlockedMe?: boolean;
 };
 
 export type Report = {
@@ -118,10 +122,12 @@ export type WantAd = {
   id: string;
   title: string;
   description: string;
-  maxPrice: number;
+  maxPrice: string;
+  status: "ACTIVE" | "FULFILLED" | "CLOSED";
   createdAt: string;
   userId: string;
   user: Pick<User, "id" | "name">;
+  category: Category;
 };
 
 export type Transaction = {

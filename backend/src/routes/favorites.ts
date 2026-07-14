@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
+import { ListingStatus } from "@prisma/client";
+import { z } from "zod";
 
 const router = Router();
 
@@ -22,16 +24,22 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 router.post("/:listingId", requireAuth, async (req, res) => {
+  const listingId = z.string().uuid().safeParse(req.params.listingId);
+  if (!listingId.success) return res.status(400).json({ message: "Invalid listing" });
+  const listing = await prisma.listing.findUnique({ where: { id: listingId.data }, select: { status: true } });
+  if (!listing || listing.status !== ListingStatus.ACTIVE) return res.status(404).json({ message: "Listing not found" });
   const favorite = await prisma.favorite.upsert({
-    where: { userId_listingId: { userId: req.user!.id, listingId: req.params.listingId } },
+    where: { userId_listingId: { userId: req.user!.id, listingId: listingId.data } },
     update: {},
-    create: { userId: req.user!.id, listingId: req.params.listingId }
+    create: { userId: req.user!.id, listingId: listingId.data }
   });
   res.status(201).json({ favorite });
 });
 
 router.delete("/:listingId", requireAuth, async (req, res) => {
-  await prisma.favorite.deleteMany({ where: { userId: req.user!.id, listingId: req.params.listingId } });
+  const listingId = z.string().uuid().safeParse(req.params.listingId);
+  if (!listingId.success) return res.status(400).json({ message: "Invalid listing" });
+  await prisma.favorite.deleteMany({ where: { userId: req.user!.id, listingId: listingId.data } });
   res.status(204).send();
 });
 

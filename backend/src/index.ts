@@ -7,6 +7,6 @@ const app = createApp();
 const server = http.createServer(app);
 attachSocket(server);
 
-server.listen(env.PORT, () => {
-  console.log(`API running on http://localhost:${env.PORT}`);
+server.listen(env.PORT, env.HOST, () => {
+  console.log(`API running on http://${env.HOST}:${env.PORT}`);
 });

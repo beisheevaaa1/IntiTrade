@@ -12,6 +12,7 @@ const listingInclude = Prisma.validator<Prisma.ListingInclude>()({
       id: true,
       name: true,
       email: true,
+      phone: true,
       showEmail: true,
       isVerified: true,
       faculty: true,
@@ -20,8 +21,6 @@ const listingInclude = Prisma.validator<Prisma.ListingInclude>()({
       avatarUrl: true,
       sellerType: true,
       showAcademicProfile: true,
-      gpa: true,
-      academicGrades: true,
       resume: true,
       projects: true,
       reviewsReceived: { select: { rating: true } }
@@ -36,7 +35,7 @@ const listingInclude = Prisma.validator<Prisma.ListingInclude>()({
 type ListingPayload = Prisma.ListingGetPayload<{ include: typeof listingInclude }>;
 
 function presentListing(listing: ListingPayload) {
-  const { reviewsReceived, email, showEmail, campusArea, showCampusArea, ...seller } = listing.seller;
+  const { reviewsReceived, email, phone, showEmail, campusArea, showCampusArea, ...seller } = listing.seller;
   const rating = reviewsReceived.length
     ? reviewsReceived.reduce((sum, review) => sum + review.rating, 0) / reviewsReceived.length
     : 0;
@@ -48,9 +47,8 @@ function presentListing(listing: ListingPayload) {
     seller: {
       ...seller,
       email: showEmail ? email : undefined,
+      phone: listing.showPhone ? phone : undefined,
       campusArea: showCampusArea ? campusArea : undefined,
-      gpa: showAcademic ? seller.gpa : undefined,
-      academicGrades: showAcademic ? seller.academicGrades : undefined,
       resume: showAcademic ? seller.resume : undefined,
       projects: showAcademic ? seller.projects : undefined,
       rating,
@@ -83,7 +81,7 @@ router.get("/autocomplete", async (req, res) => {
 router.get("/", async (req, res) => {
   const text = (key: string) => typeof req.query[key] === "string" && req.query[key] ? String(req.query[key]).trim() : undefined;
   const q = text("q") ?? text("search");
-  const category = text("category");
+  const categories = (text("category") ?? "").split(",").map((value) => value.trim()).filter(Boolean).slice(0, 10);
   const typeValue = text("type");
   const conditionValues = (text("condition") ?? "").split(",").filter((value): value is ListingCondition => value in ListingCondition);
   const sellerTypeValue = text("sellerType");
@@ -100,7 +98,7 @@ router.get("/", async (req, res) => {
     type,
     condition: conditionValues.length ? { in: conditionValues } : undefined,
     sellerId: text("sellerId"),
-    category: category ? { slug: category } : undefined,
+    category: categories.length ? { slug: { in: categories } } : undefined,
     location: text("location") ? { contains: text("location"), mode: "insensitive" } : undefined,
     courseCode: text("courseCode") ? { contains: text("courseCode"), mode: "insensitive" } : undefined,
     isbn: text("isbn") ? { contains: text("isbn"), mode: "insensitive" } : undefined,
@@ -166,6 +164,7 @@ const listingSchema = z.object({
   description: z.string().trim().min(10).max(2000),
   price: z.coerce.number().min(0),
   isNegotiable: z.boolean().optional(),
+  showPhone: z.boolean().optional(),
   type: z.nativeEnum(ListingType),
   condition: z.nativeEnum(ListingCondition).optional(),
   location: z.string().trim().min(2).max(120),
@@ -180,7 +179,7 @@ const listingSchema = z.object({
   pricingUnit: z.enum(["ITEM", "HOUR", "SESSION", "COURSE"]).optional(),
   availabilityNote: z.string().trim().max(300).optional(),
   categoryId: z.string().uuid(),
-  imageUrls: z.array(z.string().max(500)).max(6).optional()
+  imageUrls: z.array(z.string().max(500)).max(25).optional()
 });
 
 router.post("/", requireAuth, async (req, res) => {
@@ -200,6 +199,7 @@ router.post("/", requireAuth, async (req, res) => {
       quantity: data.type === ListingType.PRODUCT ? data.quantity ?? 1 : 1,
       isRecurring: data.type !== ListingType.PRODUCT,
       isNegotiable: data.isNegotiable ?? false,
+      showPhone: data.showPhone ?? false,
       isbn: data.isbn,
       author: data.author,
       edition: data.edition,
@@ -244,7 +244,7 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing status" });
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
   if (!listing) return res.status(404).json({ message: "Listing not found" });
-  const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED, ListingStatus.ACTIVE];
+  const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED];
   const sellerAllowed = listing.sellerId === req.user!.id && sellerStatuses.includes(parsed.data.status);
   if (!sellerAllowed && req.user!.role !== Role.ADMIN) return res.status(403).json({ message: "Not allowed" });
   const updated = await prisma.listing.update({ where: { id: listing.id }, data: { status: parsed.data.status }, include: listingInclude });

@@ -45,6 +45,25 @@ export function BrowseListings() {
   const [minRating, setMinRating] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const selectedCategorySlugs = selectedCategory.split(",").filter(Boolean);
+
+  const setCategoryFilter = (slugs: string[]) => {
+    const value = slugs.join(",");
+    setSelectedCategory(value);
+    const newParams = new URLSearchParams(searchParams);
+    if (value) newParams.set("category", value);
+    else newParams.delete("category");
+    newParams.delete("page");
+    setSearchParams(newParams);
+  };
+
+  const toggleCategory = (slug: string) => {
+    setCategoryFilter(
+      selectedCategorySlugs.includes(slug)
+        ? selectedCategorySlugs.filter((selected) => selected !== slug)
+        : [...selectedCategorySlugs, slug]
+    );
+  };
 
   // Fetch categories
   useEffect(() => {
@@ -197,9 +216,7 @@ export function BrowseListings() {
                       name="category"
                       checked={selectedCategory === ""}
                       onChange={() => {
-                        const newParams = new URLSearchParams(searchParams);
-                        newParams.delete("category");
-                        setSearchParams(newParams);
+                        setCategoryFilter([]);
                       }}
                       className="text-primary focus:ring-primary border-gray-300"
                     />
@@ -210,17 +227,13 @@ export function BrowseListings() {
                   <li key={cat.slug} className="flex items-center justify-between">
                     <label className="flex items-center gap-2 cursor-pointer">
                       <input 
-                        type="radio" 
+                      type="checkbox"
                         name="category"
-                        checked={selectedCategory === cat.slug}
-                        onChange={() => {
-                          const newParams = new URLSearchParams(searchParams);
-                          newParams.set("category", cat.slug);
-                          setSearchParams(newParams);
-                        }}
+                        checked={selectedCategorySlugs.includes(cat.slug)}
+                        onChange={() => toggleCategory(cat.slug)}
                         className="text-primary focus:ring-primary border-gray-300"
                       />
-                      <span className={`text-sm ${selectedCategory === cat.slug ? 'font-medium text-primary' : 'text-gray-600'}`}>{cat.name}</span>
+                      <span className={`text-sm ${selectedCategorySlugs.includes(cat.slug) ? 'font-medium text-primary' : 'text-gray-600'}`}>{cat.name}</span>
                     </label>
                   </li>
                 ))}
@@ -253,7 +266,7 @@ export function BrowseListings() {
               <Input placeholder="Campus location" value={location} onChange={(e) => setLocation(e.target.value)} />
               <Input placeholder="Course code" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
               <Input placeholder="ISBN" value={isbn} onChange={(e) => setIsbn(e.target.value)} />
-              <Button variant="outline" onClick={fetchListings} className="w-full">Apply advanced filters</Button>
+              <Button variant="outline" onClick={() => fetchListings(1, false)} className="w-full">Apply advanced filters</Button>
             </div>
 
             {/* Price Range */}
@@ -276,7 +289,7 @@ export function BrowseListings() {
                   className="h-10 text-sm" 
                 />
               </div>
-              <Button variant="outline" onClick={fetchListings} className="w-full mt-3 h-9 text-xs">Apply</Button>
+              <Button variant="outline" onClick={() => fetchListings(1, false)} className="w-full mt-3 h-9 text-xs">Apply</Button>
             </div>
 
             {/* Condition */}
@@ -319,7 +332,7 @@ export function BrowseListings() {
           <div className="hidden lg:flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold text-foreground">
               {selectedCategory 
-                ? (categories.length ? categories : staticCategories).find(c => c.slug === selectedCategory)?.name
+                ? selectedCategorySlugs.map((slug) => (categories.length ? categories : staticCategories).find(c => c.slug === slug)?.name ?? slug).join(", ")
                 : "All Listings"}
             </h1>
             
@@ -342,12 +355,12 @@ export function BrowseListings() {
 
           {/* Active Badges */}
           <div className="flex flex-wrap gap-2 mb-6">
-            {selectedCategory && (
-              <Badge variant="outline" className="bg-white border-gray-200 px-3 py-1 text-sm font-normal flex items-center gap-1">
-                Category: {(categories.length ? categories : staticCategories).find(c => c.slug === selectedCategory)?.name}
-                <button onClick={() => setSelectedCategory("")} className="ml-1 hover:bg-gray-100 rounded-full p-0.5">×</button>
+            {selectedCategorySlugs.map((slug) => (
+              <Badge key={slug} variant="outline" className="bg-white border-gray-200 px-3 py-1 text-sm font-normal flex items-center gap-1">
+                Category: {(categories.length ? categories : staticCategories).find(c => c.slug === slug)?.name ?? slug}
+                <button onClick={() => toggleCategory(slug)} className="ml-1 hover:bg-gray-100 rounded-full p-0.5">×</button>
               </Badge>
-            )}
+            ))}
             {selectedConditions.map(cond => (
               <Badge key={cond} variant="outline" className="bg-white border-gray-200 px-3 py-1 text-sm font-normal flex items-center gap-1">
                 Condition: {cond.replace("_", " ")}
@@ -362,7 +375,7 @@ export function BrowseListings() {
           {/* Categories Horizontal Chips */}
           <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-none shrink-0 mb-6 border-b">
             <button
-              onClick={() => setSelectedCategory("")}
+              onClick={() => setCategoryFilter([])}
               className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
                 selectedCategory === "" 
                   ? "bg-primary text-white border-primary shadow-sm" 
@@ -372,11 +385,11 @@ export function BrowseListings() {
               All Categories
             </button>
             {(categories.length ? categories : staticCategories).map((cat) => {
-              const isSelected = selectedCategory === cat.slug;
+              const isSelected = selectedCategorySlugs.includes(cat.slug);
               return (
                 <button
                   key={cat.slug}
-                  onClick={() => setSelectedCategory(cat.slug)}
+                  onClick={() => toggleCategory(cat.slug)}
                   className={`px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${
                     isSelected 
                       ? "bg-primary text-white border-primary shadow-sm" 

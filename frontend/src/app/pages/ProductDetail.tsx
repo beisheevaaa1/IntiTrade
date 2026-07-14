@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { renderMarkdown } from "../../utils/renderMarkdown";
 import { useParams, Link, useNavigate } from "react-router";
-import { Heart, MessageCircle, Share2, MapPin, ShieldCheck, Flag, Clock, User, Star, Loader2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Heart, MessageCircle, Share2, MapPin, ShieldCheck, Flag, Clock, User, Star, Loader2, ShieldAlert } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
@@ -26,6 +26,7 @@ export function ProductDetail() {
 
   useEffect(() => {
     if (!id) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setLoading(true);
     api.get(`/listings/${id}`)
       .then((res) => {
@@ -47,9 +48,18 @@ export function ProductDetail() {
     }
   }, [id, user]);
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.href);
-    alert("Listing link copied to clipboard!");
+  const handleShare = async () => {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: product?.title ?? "IntiTrade listing", url: window.location.href });
+        return;
+      }
+      await navigator.clipboard.writeText(window.location.href);
+      alert("Listing link copied to clipboard!");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      window.prompt("Copy this listing link:", window.location.href);
+    }
   };
 
   const handleFavoriteToggle = async () => {
@@ -130,8 +140,9 @@ export function ProductDetail() {
 
   const handleBlockSeller = async () => {
     if (!user || !product) return navigate("/login");
-    if (!window.confirm(`Block ${product.seller.name}? They will no longer be able to message you.`)) return;
-    await api.post(`/community/blocks/${product.sellerId}`);
+    const reason = window.prompt(`Why do you want to block ${product.seller.name}?`);
+    if (!reason?.trim()) return;
+    await api.post(`/community/blocks/${product.sellerId}`, { reason: reason.trim() });
     alert("Seller blocked.");
   };
 
@@ -176,6 +187,9 @@ export function ProductDetail() {
   return (
     <div className="bg-gray-50 flex-1 py-8">
       <div className="container mx-auto px-4">
+        <Button variant="ghost" onClick={() => navigate(-1)} className="mb-4 -ml-3 gap-2">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </Button>
         {/* Breadcrumb */}
         <nav className="flex items-center text-sm text-muted-foreground mb-6">
           <Link to="/" className="hover:text-primary">Home</Link>
@@ -270,6 +284,8 @@ export function ProductDetail() {
                     variant="ghost" 
                     size="icon" 
                     onClick={handleFavoriteToggle}
+                    title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+                    aria-pressed={isFavorited}
                     className={`h-10 w-10 rounded-full hover:bg-red-50 ${isFavorited ? 'text-primary fill-primary' : 'text-gray-500 hover:text-primary'}`}
                   >
                     <Heart className="h-5 w-5" />
@@ -308,7 +324,14 @@ export function ProductDetail() {
                 </div>
                 <div>
                   <span className="text-muted-foreground block mb-1 flex items-center gap-1"><MapPin className="w-4 h-4"/> Location</span>
-                  <span className="font-medium text-gray-900">{product.location || "Main Campus"}</span>
+                  <a
+                    className="font-medium text-primary hover:underline"
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(product.location || "INTI International University")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {product.location || "Main Campus"}
+                  </a>
                 </div>
                 {product.type === "PRODUCT" && <div><span className="text-muted-foreground block mb-1">Available</span><span className="font-medium">{product.quantity ?? 1}</span></div>}
                 {product.serviceDuration && <div><span className="text-muted-foreground block mb-1">Duration</span><span className="font-medium">{product.serviceDuration} min</span></div>}
@@ -321,7 +344,7 @@ export function ProductDetail() {
                     <div className="flex items-center gap-3"><span className="text-sm font-medium">Quantity</span><Input className="w-24" type="number" min="1" max={product.quantity} value={quantity} onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))} /></div>
                   )}
                   <Button onClick={handleReserve} disabled={reserveLoading || reserved} className="w-full h-12 rounded-xl font-bold bg-green-600 hover:bg-green-700">
-                    {reserved ? "Reserved â€” seller notified" : reserveLoading ? "Reserving..." : product.type === "PRODUCT" ? "Reserve item" : product.type === "COURSE" ? "Enroll in course" : "Book service"}
+                    {reserved ? "Reserved — seller notified" : reserveLoading ? "Reserving..." : product.type === "PRODUCT" ? "Reserve item" : product.type === "COURSE" ? "Enroll in course" : "Book service"}
                   </Button>
                 </div>
               )}
@@ -364,58 +387,25 @@ export function ProductDetail() {
                   )}
                 </div>
               </div>
-              {product.seller?.email && <p className="text-xs text-muted-foreground border-t pt-3">Contact: {product.seller.email}</p>}
+              {product.seller?.email && <p className="text-xs text-muted-foreground border-t pt-3">Email: {product.seller.email}</p>}
+              {product.seller?.phone && (
+                <a className="mt-2 block text-sm font-medium text-primary hover:underline" href={`tel:${product.seller.phone}`}>
+                  Call seller: {product.seller.phone}
+                </a>
+              )}
               {product.sellerId !== user?.id && <Button variant="ghost" size="sm" onClick={handleBlockSeller} className="mt-2 text-muted-foreground">Block seller</Button>}
             </div>
 
-            {/* Academic Profile (GPA, Grades & Portfolio) */}
-            {product.seller?.showAcademicProfile && (
-              <div className="bg-white p-6 rounded-2xl border-2 border-amber-200/60 shadow-md relative overflow-hidden bg-gradient-to-br from-amber-50/20 via-white to-white">
-                <div className="absolute -right-3 -top-3 text-amber-200/30 text-7xl select-none">ðŸŽ“</div>
-                
-                <h3 className="font-extrabold text-lg text-gray-900 mb-4 flex items-center gap-2">
-                  <span>ðŸŽ“</span> Academic Profile
-                  <span className="text-[10px] bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded-full border border-green-200 uppercase tracking-wider">Verified INTI Student</span>
-                </h3>
-                
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-16 h-16 rounded-full border-4 border-amber-400 bg-amber-50 flex flex-col items-center justify-center shrink-0 shadow-sm">
-                    <span className="text-xl font-black text-amber-800 leading-none">{(product.seller.gpa || 0).toFixed(2)}</span>
-                    <span className="text-[8px] text-amber-600 font-bold mt-0.5">GPA</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 text-sm">Verified Academic Excellence</h4>
-                    <p className="text-xs text-muted-foreground leading-snug">Linked with official Google Student Account & Academic Records.</p>
-                  </div>
-                </div>
-
-                {product.seller.academicGrades && (() => {
-                  try {
-                    const grades = JSON.parse(product.seller.academicGrades);
-                    if (Array.isArray(grades) && grades.length > 0) {
-                      return (
-                        <div className="mb-4">
-                          <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-2">Key Course Grades</h4>
-                          <div className="grid grid-cols-2 gap-2">
-                            {grades.map((g: any, i: number) => (
-                              <div key={i} className="bg-gray-50/80 p-2 rounded-lg border border-gray-100 flex items-center justify-between text-xs">
-                                <span className="text-gray-600 truncate mr-2" title={g.course}>{g.course}</span>
-                                <span className="font-bold text-green-700 bg-green-50 px-1.5 py-0.5 rounded shrink-0">{g.grade}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-                  } catch {}
-                  return null;
-                })()}
-
+            {/* Self-authored seller portfolio. No university verification is claimed. */}
+            {product.seller?.showAcademicProfile && (product.seller.resume || product.seller.projects) && (
+              <div className="bg-white p-6 rounded-2xl border border-border shadow-sm">
+                <h3 className="font-extrabold text-lg text-gray-900 mb-4">Tutor portfolio</h3>
+                <p className="text-xs text-muted-foreground mb-4">Information provided by the seller and not verified by the university.</p>
                 {product.seller.resume && (
-                  <div className="mb-4 pt-3 border-t border-gray-100">
+                  <div className="mb-4">
                     <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider mb-1.5">Tutor Bio & Experience</h4>
-                    <p className="text-xs text-gray-600 leading-relaxed italic whitespace-pre-line bg-gray-50/50 p-2.5 rounded-lg border border-gray-100/50">
-                      "{product.seller.resume}"
+                    <p className="text-xs text-gray-600 leading-relaxed whitespace-pre-line bg-gray-50/50 p-2.5 rounded-lg border border-gray-100/50">
+                      {product.seller.resume}
                     </p>
                   </div>
                 )}

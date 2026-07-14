@@ -14,14 +14,31 @@ import adminRoutes from "./routes/admin.js";
 import transactionRoutes from "./routes/transactions.js";
 import announcementRoutes from "./routes/announcements.js";
 import communityRoutes from "./routes/community.js";
+import wantAdRoutes from "./routes/wantAds.js";
 import { registerSwagger } from "./swagger.js";
 
 export function createApp() {
   const app = express();
+  app.set("trust proxy", env.TRUST_PROXY);
+  app.disable("x-powered-by");
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    next();
+  });
   app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
   app.use(morgan("dev"));
-  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads")));
+  app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), {
+    dotfiles: "deny",
+    setHeaders: (res) => {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Content-Security-Policy", "default-src 'none'; img-src 'self'; media-src 'self'; sandbox");
+      res.setHeader("Cross-Origin-Resource-Policy", "same-site");
+    }
+  }));
   registerSwagger(app);
 
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -35,6 +52,7 @@ export function createApp() {
   app.use("/api/transactions", transactionRoutes);
   app.use("/api/announcements", announcementRoutes);
   app.use("/api/community", communityRoutes);
+  app.use("/api/want-ads", wantAdRoutes);
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err);

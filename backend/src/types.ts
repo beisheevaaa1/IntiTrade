@@ -5,6 +5,10 @@ export type AuthUser = {
   role: Role;
 };
 
+export type AccessTokenPayload = AuthUser & {
+  tokenVersion: number;
+};
+
 declare global {
   namespace Express {
     interface Request {

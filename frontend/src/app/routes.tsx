@@ -13,6 +13,7 @@ import { WantAds } from "./pages/WantAds";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminLogin } from "./pages/AdminLogin";
 import { Announcements } from "./pages/Announcements";
+import { Wishlist } from "./pages/Wishlist";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
 function Placeholder({ title }: { title: string }) {
@@ -47,7 +48,7 @@ export const router = createBrowserRouter([
           { path: "inbox", Component: Inbox },
           { path: "dashboard", Component: Dashboard },
           { path: "admin", Component: AdminPage },
-          { path: "wishlist", Component: () => <Placeholder title="Wishlist & Alerts" /> },
+          { path: "wishlist", Component: Wishlist },
         ]
       }
     ],

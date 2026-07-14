@@ -87,7 +87,13 @@ router.patch("/reports/:id", async (req, res) => {
 router.patch("/users/:id/block", async (req, res) => {
   const parsed = z.object({ isBlocked: z.boolean(), reason: z.string().optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid user status" });
-  const user = await prisma.user.update({ where: { id: req.params.id }, data: { isBlocked: parsed.data.isBlocked } });
+  const user = await prisma.user.update({
+    where: { id: req.params.id },
+    data: {
+      isBlocked: parsed.data.isBlocked,
+      tokenVersion: parsed.data.isBlocked ? { increment: 1 } : undefined
+    }
+  });
   
   await prisma.adminActionLog.create({
     data: {
@@ -196,7 +202,7 @@ router.patch("/announcements/:id/status", async (req, res) => {
 router.patch("/disputes/:id/resolve", async (req, res) => {
   const parsed = z.object({
     verdict: z.enum(["COMPLETED", "CANCELLED"]),
-    reason: z.string().trim().max(500).optional()
+    reason: z.string().trim().min(3).max(500)
   }).safeParse(req.body);
 
   if (!parsed.success) {
@@ -212,24 +218,38 @@ router.patch("/disputes/:id/resolve", async (req, res) => {
     return res.status(404).json({ message: "Disputed transaction not found" });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    if (parsed.data.verdict === "COMPLETED" && transaction.listing.type === "PRODUCT") {
-      const remaining = Math.max(0, transaction.listing.quantity - transaction.quantity);
-      await tx.listing.update({
-        where: { id: transaction.listingId },
-        data: { quantity: remaining, status: remaining === 0 ? "SOLD" : "ACTIVE" }
+  let updated;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.transaction.updateMany({
+        where: { id: transaction.id, status: "DISPUTED" },
+        data: {
+          status: parsed.data.verdict === "COMPLETED" ? "COMPLETED" : "CANCELLED",
+          completedAt: parsed.data.verdict === "COMPLETED" ? new Date() : undefined,
+          cancelledAt: parsed.data.verdict === "CANCELLED" ? new Date() : undefined
+        }
       });
-    }
+      if (claimed.count !== 1) return null;
 
-    return tx.transaction.update({
-      where: { id: transaction.id },
-      data: {
-        status: parsed.data.verdict === "COMPLETED" ? "COMPLETED" : "CANCELLED",
-        completedAt: parsed.data.verdict === "COMPLETED" ? new Date() : undefined,
-        cancelledAt: parsed.data.verdict === "CANCELLED" ? new Date() : undefined
+      if (parsed.data.verdict === "COMPLETED" && transaction.listing.type === "PRODUCT") {
+        const stock = await tx.listing.updateMany({
+          where: { id: transaction.listingId, quantity: { gte: transaction.quantity } },
+          data: { quantity: { decrement: transaction.quantity } }
+        });
+        if (stock.count !== 1) throw new Error("DISPUTE_STOCK_CONFLICT");
+        const listing = await tx.listing.findUniqueOrThrow({ where: { id: transaction.listingId }, select: { quantity: true } });
+        if (listing.quantity === 0) await tx.listing.update({ where: { id: transaction.listingId }, data: { status: "SOLD" } });
       }
+
+      return tx.transaction.findUniqueOrThrow({ where: { id: transaction.id } });
     });
-  });
+  } catch (error) {
+    if (error instanceof Error && error.message === "DISPUTE_STOCK_CONFLICT") {
+      return res.status(409).json({ message: "Listing stock changed. Review the dispute before trying again." });
+    }
+    throw error;
+  }
+  if (!updated) return res.status(409).json({ message: "This dispute has already been resolved" });
 
   await prisma.adminActionLog.create({
     data: {

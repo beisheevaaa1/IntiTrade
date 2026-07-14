@@ -7,9 +7,9 @@ type AuthContextValue = {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<string | undefined>;
+  register: (name: string, email: string, phone: string, password: string) => Promise<boolean>;
   verifyEmail: (token: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (updated: Partial<User>) => void;
   reloadUser: () => Promise<void>;
 };
@@ -50,9 +50,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(response.data.token);
       setUser(response.data.user);
     },
-    async register(name, email, password) {
-      const response = await api.post("/auth/register", { name, email, password });
-      return response.data.verificationToken as string | undefined;
+    async register(name, email, phone, password) {
+      const response = await api.post("/auth/register", { name, email, phone, password });
+      if (response.data.token) {
+        localStorage.setItem("marketplace_token", response.data.token);
+        localStorage.setItem("isLoggedIn", "true");
+        setToken(response.data.token);
+        setUser(response.data.user);
+      }
+      return Boolean(response.data.requiresVerification);
     },
     async verifyEmail(verificationToken) {
       const response = await api.post("/auth/verify-email", { token: verificationToken });
@@ -61,7 +67,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(response.data.token);
       setUser(response.data.user);
     },
-    logout() {
+    async logout() {
+      try {
+        await api.post("/auth/logout");
+      } catch {
+        // Always clear the local session even if the server is unavailable.
+      }
       localStorage.removeItem("marketplace_token");
       localStorage.removeItem("isLoggedIn");
       setToken(null);

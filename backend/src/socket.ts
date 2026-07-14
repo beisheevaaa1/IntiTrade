@@ -1,5 +1,6 @@
 import type { Server } from "node:http";
-import { Server as SocketServer } from "socket.io";
+import { Server as SocketServer, type Socket } from "socket.io";
+import { z } from "zod";
 import { env } from "./env.js";
 import { prisma } from "./prisma.js";
 import { verifyAccessToken } from "./utils/auth.js";
@@ -7,9 +8,34 @@ import { handleAutoReply } from "./utils/autoReply.js";
 
 let ioInstance: SocketServer | null = null;
 
+const conversationIdSchema = z.string().uuid();
+const attachmentSchema = z.string()
+  .max(500)
+  .regex(/^\/uploads\/[a-zA-Z0-9._-]+\.(?:jpe?g|png|webp|gif|mp4|mov|webm|ogg)$/i, "Invalid attachment URL");
+const messageSchema = z.object({
+  conversationId: conversationIdSchema,
+  body: z.string().trim().max(1200).default(""),
+  attachmentUrl: attachmentSchema.optional(),
+  offerAmount: z.coerce.number().positive().max(1000000).optional()
+}).refine((payload) => Boolean(payload.body || payload.attachmentUrl || payload.offerAmount), "Message content is required");
+const typingSchema = z.object({ conversationId: conversationIdSchema });
+
+type Ack = (response: { ok: boolean; message?: unknown }) => void;
+
+async function socketAccountIsActive(socket: Socket) {
+  const userId = socket.data.user?.id as string | undefined;
+  const tokenVersion = socket.data.user?.tokenVersion as number | undefined;
+  if (!userId || tokenVersion === undefined) return false;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isBlocked: true, tokenVersion: true } });
+  const active = Boolean(user && !user.isBlocked && user.tokenVersion === tokenVersion);
+  if (!active) socket.disconnect(true);
+  return active;
+}
+
 export function attachSocket(server: Server) {
   const io = new SocketServer(server, {
-    cors: { origin: env.CLIENT_URL, credentials: true }
+    cors: { origin: env.CLIENT_URL, credentials: true },
+    maxHttpBufferSize: 20_000
   });
   ioInstance = io;
 
@@ -18,9 +44,12 @@ export function attachSocket(server: Server) {
     if (!token || typeof token !== "string") return next(new Error("Authentication required"));
     try {
       const payload = verifyAccessToken(token);
-      const user = await prisma.user.findUnique({ where: { id: payload.id }, select: { id: true, role: true, isBlocked: true } });
-      if (!user || user.isBlocked) return next(new Error("Account is unavailable"));
-      socket.data.user = { id: user.id, role: user.role };
+      const user = await prisma.user.findUnique({
+        where: { id: payload.id },
+        select: { id: true, role: true, isBlocked: true, tokenVersion: true }
+      });
+      if (!user || user.isBlocked || payload.tokenVersion !== user.tokenVersion) return next(new Error("Account is unavailable"));
+      socket.data.user = { id: user.id, role: user.role, tokenVersion: user.tokenVersion };
       next();
     } catch {
       next(new Error("Invalid token"));
@@ -28,82 +57,116 @@ export function attachSocket(server: Server) {
   });
 
   io.on("connection", (socket) => {
-    socket.on("conversation:join", async (conversationId: string) => {
-      const userId = socket.data.user.id as string;
-      const conversation = await prisma.conversation.findFirst({
-        where: { id: conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }
-      });
-      if (conversation) {
-        socket.join(conversationId);
+    const eventWindows = new Map<string, number[]>();
+    const allowEvent = (key: string, max: number, windowMs: number) => {
+      const now = Date.now();
+      const recent = (eventWindows.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
+      if (recent.length >= max) return false;
+      recent.push(now);
+      eventWindows.set(key, recent);
+      return true;
+    };
+
+    socket.join(`user:${socket.data.user.id}`);
+
+    socket.on("conversation:join", async (input: unknown, callback?: Ack) => {
+      try {
+        const parsed = conversationIdSchema.safeParse(input);
+        if (!parsed.success || !await socketAccountIsActive(socket)) return callback?.({ ok: false, message: "Invalid conversation" });
+        const userId = socket.data.user.id as string;
+        const conversation = await prisma.conversation.findFirst({
+          where: { id: parsed.data, OR: [{ buyerId: userId }, { sellerId: userId }] }
+        });
+        if (!conversation) return callback?.({ ok: false, message: "Conversation not found" });
+
+        socket.join(conversation.id);
+        const readAt = new Date();
         await prisma.message.updateMany({
           where: { conversationId: conversation.id, senderId: { not: userId }, readAt: null },
-          data: { readAt: new Date(), deliveredAt: new Date() }
+          data: { readAt, deliveredAt: readAt }
         });
-        socket.to(conversation.id).emit("messages:read", { conversationId: conversation.id, readAt: new Date() });
+        socket.to(conversation.id).emit("messages:read", { conversationId: conversation.id, readAt });
+        callback?.({ ok: true });
+      } catch (error) {
+        console.error("Socket conversation join failed:", error);
+        callback?.({ ok: false, message: "Could not open the conversation" });
       }
     });
 
-    socket.on("message:send", async (payload: { conversationId: string; body?: string; attachmentUrl?: string; offerAmount?: number }, callback?: (response: unknown) => void) => {
-      const userId = socket.data.user.id as string;
-      const conversation = await prisma.conversation.findFirst({
-        where: { id: payload.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }
-      });
-      const body = payload.body?.trim() ?? "";
-      if (!conversation || body.length > 1200 || (!body && !payload.attachmentUrl && !payload.offerAmount)) {
-        callback?.({ ok: false, message: "Message rejected" });
-        return;
+    socket.on("message:send", async (input: unknown, callback?: Ack) => {
+      try {
+        if (!allowEvent("message:send", 12, 10_000)) return callback?.({ ok: false, message: "You are sending messages too quickly" });
+        const parsed = messageSchema.safeParse(input);
+        if (!parsed.success || !await socketAccountIsActive(socket)) return callback?.({ ok: false, message: "Message rejected" });
+
+        const userId = socket.data.user.id as string;
+        const conversation = await prisma.conversation.findFirst({
+          where: { id: parsed.data.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }
+        });
+        if (!conversation) return callback?.({ ok: false, message: "Conversation not found" });
+        if (parsed.data.offerAmount && conversation.buyerId !== userId) {
+          return callback?.({ ok: false, message: "Only the buyer can make an offer" });
+        }
+
+        const otherUserId = conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId;
+        const blocked = await prisma.userBlock.findFirst({
+          where: { OR: [{ blockerId: userId, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: userId }] }
+        });
+        if (blocked) return callback?.({ ok: false, message: "Messaging is unavailable" });
+
+        const connectedSockets = Array.from(io.sockets.sockets.values());
+        const isPartnerOnline = connectedSockets.some((connected) => connected.data.user?.id === otherUserId);
+        const roomSocketIds = io.sockets.adapter.rooms.get(conversation.id) ?? new Set<string>();
+        const isPartnerInRoom = Array.from(roomSocketIds).some((socketId) => io.sockets.sockets.get(socketId)?.data.user?.id === otherUserId);
+        const now = new Date();
+
+        const message = await prisma.$transaction(async (tx) => {
+          const created = await tx.message.create({
+            data: {
+              conversationId: conversation.id,
+              senderId: userId,
+              body: parsed.data.body,
+              attachmentUrl: parsed.data.attachmentUrl,
+              offerAmount: parsed.data.offerAmount,
+              offerStatus: parsed.data.offerAmount ? "PENDING" : undefined,
+              deliveredAt: isPartnerOnline ? now : undefined,
+              readAt: isPartnerInRoom ? now : undefined
+            },
+            include: { sender: { select: { id: true, name: true } } }
+          });
+          await tx.conversation.update({ where: { id: conversation.id }, data: { updatedAt: now } });
+          return created;
+        });
+
+        io.to(conversation.id).emit("message:new", message);
+        io.to(`user:${otherUserId}`).emit("conversation:updated", { conversationId: conversation.id, message });
+        callback?.({ ok: true, message });
+        void handleAutoReply(conversation.id, userId);
+      } catch (error) {
+        console.error("Socket message send failed:", error);
+        callback?.({ ok: false, message: "Could not send the message" });
       }
-      const otherUserId = conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId;
-      const blocked = await prisma.userBlock.findFirst({ where: { OR: [{ blockerId: userId, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: userId }] } });
-      if (blocked) return callback?.({ ok: false, message: "Messaging is unavailable" });
-
-      const allSockets = await io.fetchSockets();
-      const isPartnerOnline = allSockets.some(s => s.data.user?.id === otherUserId);
-      const roomSockets = await io.in(conversation.id).fetchSockets();
-      const isPartnerInRoom = roomSockets.some(s => s.data.user?.id === otherUserId);
-
-      const message = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          senderId: userId,
-          body,
-          attachmentUrl: payload.attachmentUrl?.slice(0, 500),
-          offerAmount: payload.offerAmount && payload.offerAmount > 0 ? payload.offerAmount : undefined,
-          deliveredAt: isPartnerOnline ? new Date() : undefined,
-          readAt: isPartnerInRoom ? new Date() : undefined
-        },
-        include: { sender: { select: { id: true, name: true } } }
-      });
-      await prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
-      
-      io.to(conversation.id).emit("message:new", message);
-      callback?.({ ok: true, message });
-
-      // Trigger auto-reply in background
-      handleAutoReply(conversation.id, userId);
     });
 
-    socket.on("typing:start", async (payload: { conversationId: string }) => {
-      const userId = socket.data.user.id as string;
-      const conversation = await prisma.conversation.findFirst({ where: { id: payload.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }, select: { id: true } });
-      if (!conversation) return;
-      socket.to(payload.conversationId).emit("typing:status", {
-        conversationId: payload.conversationId,
-        userId,
-        isTyping: true
-      });
-    });
+    const handleTyping = async (input: unknown, isTyping: boolean) => {
+      try {
+        if (!allowEvent("typing", 10, 5_000)) return;
+        const parsed = typingSchema.safeParse(input);
+        if (!parsed.success) return;
+        const userId = socket.data.user.id as string;
+        const conversation = await prisma.conversation.findFirst({
+          where: { id: parsed.data.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] },
+          select: { id: true }
+        });
+        if (!conversation) return;
+        socket.to(conversation.id).emit("typing:status", { conversationId: conversation.id, userId, isTyping });
+      } catch (error) {
+        console.error("Socket typing event failed:", error);
+      }
+    };
 
-    socket.on("typing:stop", async (payload: { conversationId: string }) => {
-      const userId = socket.data.user.id as string;
-      const conversation = await prisma.conversation.findFirst({ where: { id: payload.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }, select: { id: true } });
-      if (!conversation) return;
-      socket.to(payload.conversationId).emit("typing:status", {
-        conversationId: payload.conversationId,
-        userId,
-        isTyping: false
-      });
-    });
+    socket.on("typing:start", (input: unknown) => void handleTyping(input, true));
+    socket.on("typing:stop", (input: unknown) => void handleTyping(input, false));
   });
 
   return io;
