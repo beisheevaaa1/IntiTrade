@@ -57,7 +57,7 @@ conn.on('ready', () => {
 
     // Restart and verify the local-only API.
     `pm2 restart university-marketplace-api --update-env || pm2 start dist/index.js --name "university-marketplace-api" --cwd "${remoteProjectDir}/backend"`,
-    `curl --fail --silent --show-error http://127.0.0.1:${apiPort}/api/health >/dev/null`,
+    `for attempt in $(seq 1 20); do if curl --fail --silent http://127.0.0.1:${apiPort}/api/health >/dev/null; then exit 0; fi; sleep 1; done; echo "API health check failed" >&2; exit 1`,
     'pm2 save',
     'pm2 list'
   ];
