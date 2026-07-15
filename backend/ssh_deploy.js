@@ -108,7 +108,7 @@ conn.on('ready', () => {
     'PROJECT_DIR="$PROJECT_DIR" BACKEND_BUILD_DIR="$BUILD_DIR/backend" BACKEND_RELEASE_MODE=stage bash deploy/build-backend-release.sh',
     'PROJECT_DIR="$PROJECT_DIR" FRONTEND_BUILD_DIR="$BUILD_DIR/frontend" FRONTEND_RELEASE_MODE=stage bash deploy/build-frontend-release.sh',
     'RELEASE="$(cat backend/.pending-runtime-release)"',
-    `runuser -u intitrade -- env HOME=/var/lib/intitrade bash -c 'cd "$1" && node --input-type=module -e "await import(\"./dist/env.js\")"' -- "$RELEASE"`,
+    'runuser -u intitrade -- env HOME=/var/lib/intitrade bash -c \'cd "$1" && exec "$2" --input-type=module --eval "$3"\' -- "$RELEASE" "$NODE_BIN" \'await import("./dist/env.js")\'',
 
     'echo "[7/12] Creating a verified pre-migration backup"',
     'PROJECT_DIR="$PROJECT_DIR" bash deploy/backup-intitrade.sh',

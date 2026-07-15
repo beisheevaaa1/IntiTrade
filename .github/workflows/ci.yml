@@ -68,6 +68,27 @@ jobs:
         working-directory: backend
         env:
           NODE_ENV: test
+      - name: Validate deployment scripts and rendered remote transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check backend/ssh_config.js
+          node --check backend/ssh_preflight.js
+          node --check backend/ssh_deploy.js
+          for script in deploy/*.sh; do bash -n "$script"; done
+          node --input-type=module <<'EOF' | bash -n
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const source = fs.readFileSync('backend/ssh_deploy.js', 'utf8').replace(/\r\n/g, '\n');
+          const marker = '  const script = ';
+          const start = source.indexOf(marker);
+          const end = source.indexOf(';\n\n  conn.exec', start);
+          assert.ok(start >= 0 && end > start, 'embedded deployment transaction was not found');
+          const rendered = Function('remoteProjectDir', 'apiPort', `return (${source.slice(start + marker.length, end)})`)('/var/www/university-marketplace', 4099);
+          const validation = rendered.split('\n').find((line) => line.includes('dist/env.js'));
+          assert.equal(validation, 'runuser -u intitrade -- env HOME=/var/lib/intitrade bash -c \'cd "$1" && exec "$2" --input-type=module --eval "$3"\' -- "$RELEASE" "$NODE_BIN" \'await import("./dist/env.js")\'');
+          process.stdout.write(rendered);
+          EOF
       - name: Install frontend dependencies
         run: npm ci
         working-directory: frontend
