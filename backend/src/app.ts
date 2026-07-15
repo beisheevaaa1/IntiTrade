@@ -3,7 +3,7 @@ import "express-async-errors";
 import cors from "cors";
 import express from "express";
 import morgan from "morgan";
-import { env } from "./env.js";
+import { allowedClientOrigins, env } from "./env.js";
 import authRoutes from "./routes/auth.js";
 import listingRoutes from "./routes/listings.js";
 import uploadRoutes from "./routes/uploads.js";
@@ -15,12 +15,18 @@ import transactionRoutes from "./routes/transactions.js";
 import announcementRoutes from "./routes/announcements.js";
 import communityRoutes from "./routes/community.js";
 import wantAdRoutes from "./routes/wantAds.js";
+import supportRoutes from "./routes/support.js";
+import telemetryRoutes from "./routes/telemetry.js";
 import { registerSwagger } from "./swagger.js";
+import { checkReadiness, getLifecycleState } from "./health.js";
+import { errorHandler, requestContext } from "./middleware/requestContext.js";
+import { originProtection } from "./middleware/originProtection.js";
 
 export function createApp() {
   const app = express();
   app.set("trust proxy", env.TRUST_PROXY);
   app.disable("x-powered-by");
+  app.use(requestContext);
   app.use((_req, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("X-Frame-Options", "DENY");
@@ -28,9 +34,14 @@ export function createApp() {
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     next();
   });
-  app.use(cors({ origin: env.CLIENT_URL, credentials: true }));
+  app.use(cors({
+    origin: allowedClientOrigins,
+    credentials: true,
+    exposedHeaders: ["X-Request-ID", "RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"]
+  }));
+  app.use(originProtection);
   app.use(express.json({ limit: "1mb" }));
-  app.use(morgan("dev"));
+  if (env.NODE_ENV !== "production") app.use(morgan("dev"));
   app.use("/uploads", express.static(path.resolve(process.cwd(), "uploads"), {
     dotfiles: "deny",
     setHeaders: (res) => {
@@ -41,7 +52,14 @@ export function createApp() {
   }));
   registerSwagger(app);
 
-  app.get("/api/health", (_req, res) => res.json({ ok: true }));
+  app.get("/api/health/live", (_req, res) => res.json({ ok: true, state: getLifecycleState(), version: env.APP_VERSION }));
+  const readinessHandler: express.RequestHandler = async (_req, res) => {
+    const readiness = await checkReadiness();
+    res.status(readiness.ready ? 200 : 503).json({ ok: readiness.ready, ...readiness, version: env.APP_VERSION });
+  };
+  app.get("/api/health/ready", readinessHandler);
+  app.get("/api/ready", readinessHandler);
+  app.get("/api/health", readinessHandler);
   app.use("/api/auth", authRoutes);
   app.use("/api/listings", listingRoutes);
   app.use("/api/uploads", uploadRoutes);
@@ -53,11 +71,10 @@ export function createApp() {
   app.use("/api/announcements", announcementRoutes);
   app.use("/api/community", communityRoutes);
   app.use("/api/want-ads", wantAdRoutes);
+  app.use("/api/support", supportRoutes);
+  app.use("/api/telemetry", telemetryRoutes);
 
-  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error(err);
-    res.status(500).json({ message: "Unexpected server error" });
-  });
+  app.use(errorHandler);
 
   return app;
 }

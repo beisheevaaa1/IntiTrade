@@ -33,7 +33,7 @@ export function ProductDetail() {
         setProduct(res.data.listing);
       })
       .catch((err) => {
-        console.error(err);
+        console.error("Request failed");
         setError("Listing not found or has been deleted.");
       })
       .finally(() => setLoading(false));
@@ -44,7 +44,7 @@ export function ProductDetail() {
           const list = res.data.favorites || [];
           setIsFavorited(list.some((fav: any) => fav.listingId === id));
         })
-        .catch((err) => console.error("Error fetching favorites:", err));
+        .catch((err) => console.error("Error fetching favorites:"));
     }
   }, [id, user]);
 
@@ -76,7 +76,7 @@ export function ProductDetail() {
         setIsFavorited(true);
       }
     } catch (err) {
-      console.error("Error toggling favorite:", err);
+      console.error("Error toggling favorite:");
     }
   };
 
@@ -99,7 +99,7 @@ export function ProductDetail() {
       const conversationId = res.data.conversation.id;
       navigate(`/inbox?conversationId=${conversationId}`);
     } catch (err) {
-      console.error("Error starting conversation:", err);
+      console.error("Error starting conversation:");
       alert("Failed to start chat. Please try again.");
     } finally {
       setChatLoading(false);
@@ -119,7 +119,7 @@ export function ProductDetail() {
           const conversationId = res.data.conversation.id;
           navigate(`/inbox?conversationId=${conversationId}`);
         } catch (err) {
-          console.error("Error starting conversation after reservation:", err);
+          console.error("Error starting conversation after reservation:");
           alert("Item reserved. You can message the seller from their profile or the listing details.");
         }
       }
@@ -180,7 +180,7 @@ export function ProductDetail() {
 
   const imagesList = product.images && product.images.length > 0
     ? product.images.map(img => mediaUrl(img.url))
-    : ["https://images.unsplash.com/photo-1541963463532-d68292c34b19?q=80&w=1200"];
+    : ["/placeholder-item.svg"];
 
   const numericPrice = parseFloat(product.price);
 
@@ -426,16 +426,16 @@ export function ProductDetail() {
               <div className="flex items-center gap-2 mb-3 text-primary font-bold">
                 <ShieldCheck className="w-5 h-5" /> Safety & Meetup
               </div>
-              <ul className="text-sm text-red-900 space-y-2">
-                {product.meetupPoint && <li><strong>Verified point:</strong> {product.meetupPoint.name} â€” {product.meetupPoint.description}</li>}
+              <ul className="text-sm text-red-900 space-y-2 list-disc pl-5">
+                {product.meetupPoint && <li><strong>Suggested campus point:</strong> {product.meetupPoint.name} — {product.meetupPoint.description}</li>}
                 {product.meetupPreference && (
                   <li>
                     <strong>Meetup Area:</strong> {product.meetupPreference}
                   </li>
                 )}
-                <li>â€¢ Always meet in well-lit public campus areas.</li>
-                <li>â€¢ Inspect the item thoroughly before paying.</li>
-                <li>â€¢ Do not transfer money in advance.</li>
+                <li>Always meet in well-lit public campus areas.</li>
+                <li>Inspect the item thoroughly before paying.</li>
+                <li>Do not transfer money in advance.</li>
               </ul>
               <button onClick={handleReport} className="flex items-center gap-1 text-xs text-red-600 font-semibold mt-4 hover:underline">
                 <Flag className="w-3 h-3" /> Report this listing

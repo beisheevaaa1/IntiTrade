@@ -27,6 +27,11 @@ const swaggerSpec = swaggerJSDoc({
     ],
     components: {
       securitySchemes: {
+        cookieAuth: {
+          type: "apiKey",
+          in: "cookie",
+          name: "intitrade_session"
+        },
         bearerAuth: {
           type: "http",
           scheme: "bearer",
@@ -110,11 +115,12 @@ const swaggerSpec = swaggerJSDoc({
         },
         RegisterRequest: {
           type: "object",
-          required: ["name", "email", "password"],
+          required: ["name", "email", "phone", "password"],
           properties: {
             name: { type: "string", example: "Diana A." },
             email: { type: "string", example: "student@gmail.com" },
-            password: { type: "string", example: "Student12345!" }
+            phone: { type: "string", example: "+60123456789" },
+            password: { type: "string", example: "ExampleOnly-Password-2026!" }
           }
         },
         LoginRequest: {
@@ -122,7 +128,8 @@ const swaggerSpec = swaggerJSDoc({
           required: ["email", "password"],
           properties: {
             email: { type: "string", example: "student@gmail.com" },
-            password: { type: "string", example: "Student12345!" }
+            password: { type: "string", example: "ExampleOnly-Password-2026!" },
+            rememberMe: { type: "boolean", default: false, description: "Persist the HttpOnly cookie after the browser closes" }
           }
         },
         ListingCreateRequest: {
@@ -132,10 +139,12 @@ const swaggerSpec = swaggerJSDoc({
             title: { type: "string" },
             description: { type: "string" },
             price: { type: "number", example: 35 },
-            type: { type: "string", enum: ["PRODUCT", "SERVICE"] },
+            type: { type: "string", enum: ["PRODUCT", "SERVICE", "COURSE"] },
             condition: { type: "string", enum: ["NEW", "LIKE_NEW", "GOOD", "FAIR", "NOT_APPLICABLE"] },
             location: { type: "string" },
             categoryId: { type: "string", format: "uuid" },
+            quantity: { type: "integer", minimum: 1, maximum: 10000 },
+            showPhone: { type: "boolean", default: false },
             imageUrls: { type: "array", items: { type: "string" } }
           }
         }
@@ -145,9 +154,26 @@ const swaggerSpec = swaggerJSDoc({
         "/api/health": {
           get: {
             tags: ["Health"],
-            summary: "Check API health",
+            summary: "Check API readiness and database connectivity",
             responses: {
               200: { description: "API is running" }
+            }
+          }
+        },
+        "/api/health/live": {
+          get: {
+            tags: ["Health"],
+            summary: "Check whether the API process is alive",
+            responses: { 200: { description: "API process is running" } }
+          }
+        },
+        "/api/health/ready": {
+          get: {
+            tags: ["Health"],
+            summary: "Check whether the API and database are ready",
+            responses: {
+              200: { description: "API is ready" },
+              503: { description: "API is starting, stopping, or the database is unavailable" }
             }
           }
         },
@@ -182,7 +208,7 @@ const swaggerSpec = swaggerJSDoc({
               }
             },
             responses: {
-              200: { description: "Email verified and JWT returned" },
+              200: { description: "Email verified and an HttpOnly session cookie set" },
               400: { description: "Invalid token" }
             }
           }
@@ -190,7 +216,7 @@ const swaggerSpec = swaggerJSDoc({
         "/api/auth/login": {
           post: {
             tags: ["Auth"],
-            summary: "Login and receive JWT",
+            summary: "Login and receive an HttpOnly session cookie",
             requestBody: {
               required: true,
               content: { "application/json": { schema: { $ref: "#/components/schemas/LoginRequest" } } }
@@ -205,7 +231,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Auth"],
             summary: "Get current user",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: {
               200: { description: "Current user" },
               401: { description: "Authentication required" }
@@ -240,7 +266,7 @@ const swaggerSpec = swaggerJSDoc({
           post: {
             tags: ["Listings"],
             summary: "Create listing",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             requestBody: {
               required: true,
               content: { "application/json": { schema: { $ref: "#/components/schemas/ListingCreateRequest" } } }
@@ -255,7 +281,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Listings"],
             summary: "List own listings",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: {
               200: { description: "Own listings" }
             }
@@ -274,7 +300,7 @@ const swaggerSpec = swaggerJSDoc({
           patch: {
             tags: ["Listings"],
             summary: "Update own listing",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }],
             responses: {
               200: { description: "Listing updated" },
@@ -286,7 +312,7 @@ const swaggerSpec = swaggerJSDoc({
           patch: {
             tags: ["Listings"],
             summary: "Update listing lifecycle status",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }],
             requestBody: {
               required: true,
@@ -309,7 +335,7 @@ const swaggerSpec = swaggerJSDoc({
           post: {
             tags: ["Uploads"],
             summary: "Upload listing images",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             requestBody: {
               required: true,
               content: {
@@ -332,7 +358,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Favorites"],
             summary: "List saved listings",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: { 200: { description: "Favorites list" } }
           }
         },
@@ -340,14 +366,14 @@ const swaggerSpec = swaggerJSDoc({
           post: {
             tags: ["Favorites"],
             summary: "Save listing",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             parameters: [{ in: "path", name: "listingId", required: true, schema: { type: "string", format: "uuid" } }],
             responses: { 201: { description: "Saved" } }
           },
           delete: {
             tags: ["Favorites"],
             summary: "Remove saved listing",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             parameters: [{ in: "path", name: "listingId", required: true, schema: { type: "string", format: "uuid" } }],
             responses: { 204: { description: "Removed" } }
           }
@@ -356,13 +382,13 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Conversations"],
             summary: "List conversations",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: { 200: { description: "Conversation inbox" } }
           },
           post: {
             tags: ["Conversations"],
             summary: "Start conversation from listing",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             requestBody: {
               required: true,
               content: {
@@ -382,7 +408,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Conversations"],
             summary: "Get conversation thread",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }],
             responses: { 200: { description: "Conversation detail" } }
           }
@@ -391,7 +417,7 @@ const swaggerSpec = swaggerJSDoc({
           post: {
             tags: ["Conversations"],
             summary: "Send message over REST",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             parameters: [{ in: "path", name: "id", required: true, schema: { type: "string", format: "uuid" } }],
             requestBody: {
               required: true,
@@ -412,7 +438,7 @@ const swaggerSpec = swaggerJSDoc({
           post: {
             tags: ["Reports"],
             summary: "Report listing",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             requestBody: {
               required: true,
               content: {
@@ -436,7 +462,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Admin"],
             summary: "Admin dashboard metrics",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: { 200: { description: "Admin metrics" } }
           }
         },
@@ -444,7 +470,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Admin"],
             summary: "Admin listing queue",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: { 200: { description: "All listings for moderation" } }
           }
         },
@@ -452,7 +478,7 @@ const swaggerSpec = swaggerJSDoc({
           get: {
             tags: ["Admin"],
             summary: "Admin reports queue",
-            security: [{ bearerAuth: [] }],
+            security: [{ cookieAuth: [] }, { bearerAuth: [] }],
             responses: { 200: { description: "Reports queue" } }
           }
         }

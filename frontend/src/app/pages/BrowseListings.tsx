@@ -69,7 +69,7 @@ export function BrowseListings() {
   useEffect(() => {
     api.get("/listings/categories")
       .then((res) => setCategories(res.data.categories))
-      .catch((err) => console.error("Error fetching categories:", err));
+      .catch((err) => console.error("Error fetching categories:"));
   }, []);
 
   // Sync with URL params
@@ -125,7 +125,7 @@ export function BrowseListings() {
         setListings((prev) => append ? [...prev, ...newListings] : newListings);
         setTotalPages(res.data.pagination?.totalPages || 1);
       })
-      .catch((err) => console.error("Error fetching listings:", err))
+      .catch((err) => console.error("Error fetching listings:"))
       .finally(() => setLoading(false));
   };
 

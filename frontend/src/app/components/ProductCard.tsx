@@ -25,7 +25,7 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const firstImage = product.images?.[0]?.url 
     ? mediaUrl(product.images[0].url)
-    : "https://images.unsplash.com/photo-1541963463532-d68292c34b19?q=80&w=600";
+    : "/placeholder-item.svg";
 
   const numericPrice = parseFloat(product.price);
 
@@ -47,7 +47,7 @@ export function ProductCard({ product }: ProductCardProps) {
             alt={product.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1541963463532-d68292c34b19?q=80&w=600";
+              (e.target as HTMLImageElement).src = "/placeholder-item.svg";
             }}
           />
         )}

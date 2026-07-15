@@ -11,6 +11,7 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -19,10 +20,10 @@ export function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       navigate("/");
     } catch (err: any) {
-      console.error(err);
+      console.error("Request failed");
       setError(err.response?.data?.message || "Invalid email or password");
     } finally {
       setLoading(false);
@@ -45,7 +46,7 @@ export function Login() {
           </Link>
           <h2 className="text-3xl font-extrabold text-gray-900">Welcome back</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Log in to your verified campus marketplace
+            Log in to your campus marketplace account
           </p>
         </div>
 
@@ -59,7 +60,7 @@ export function Login() {
           <div className="space-y-4">
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 mb-1">
-                INTI Institutional Email
+                Email
               </label>
               <Input
                 id="email-address"
@@ -69,7 +70,7 @@ export function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="student@student.newinti.edu.my"
+                placeholder="you@example.com"
               />
             </div>
             <div>
@@ -107,6 +108,8 @@ export function Login() {
                 id="remember-me"
                 name="remember-me"
                 type="checkbox"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
                 className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded cursor-pointer"
               />
               <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900 cursor-pointer">
@@ -114,11 +117,6 @@ export function Login() {
               </label>
             </div>
 
-            <div className="text-sm">
-              <Link to="#" className="font-medium text-primary hover:text-primary/80">
-                Forgot your password?
-              </Link>
-            </div>
           </div>
 
           <div>
@@ -143,8 +141,8 @@ export function Login() {
           <div className="bg-red-50 p-4 rounded-xl flex gap-3 items-start border border-red-100">
             <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
             <div>
-              <h4 className="text-sm font-semibold text-gray-900">Campus Exclusive</h4>
-              <p className="text-xs text-gray-600 mt-1">IntiTrade is restricted to users with valid @newinti.edu.my or @inti.edu.my emails to ensure a safe trading environment.</p>
+              <h4 className="text-sm font-semibold text-gray-900">Safer campus trading</h4>
+              <p className="text-xs text-gray-600 mt-1">Contact details stay private unless you choose to show them, and every listing is reviewed before publication.</p>
             </div>
           </div>
           

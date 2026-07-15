@@ -1,68 +1,49 @@
 import { createBrowserRouter } from "react-router";
 import { AppLayout } from "./components/AppLayout";
-import { Home } from "./pages/Home";
-import { Login } from "./pages/Login";
-import { Register } from "./pages/Register";
-import { VerifyEmail } from "./pages/VerifyEmail";
-import { BrowseListings } from "./pages/BrowseListings";
-import { ProductDetail } from "./pages/ProductDetail";
-import { CreateListing } from "./pages/CreateListing";
-import { Inbox } from "./pages/Inbox";
-import { Dashboard } from "./pages/Dashboard";
-import { WantAds } from "./pages/WantAds";
-import { AdminPage } from "./pages/AdminPage";
-import { AdminLogin } from "./pages/AdminLogin";
-import { Announcements } from "./pages/Announcements";
-import { Wishlist } from "./pages/Wishlist";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex-1 flex items-center justify-center p-8 bg-gray-50">
-      <div className="text-center max-w-md">
-        <h2 className="text-2xl font-bold mb-4">{title}</h2>
-        <p className="text-muted-foreground">This page is under construction. It will feature the {title.toLowerCase()} functionality as specified in the IntiTrade design system.</p>
-      </div>
-    </div>
-  );
-}
+const lazyHome = async () => ({ Component: (await import("./pages/Home")).Home });
+const lazyLogin = async () => ({ Component: (await import("./pages/Login")).Login });
+const lazyRegister = async () => ({ Component: (await import("./pages/Register")).Register });
+const lazyVerifyEmail = async () => ({ Component: (await import("./pages/VerifyEmail")).VerifyEmail });
+const lazyBrowse = async () => ({ Component: (await import("./pages/BrowseListings")).BrowseListings });
+const lazyProduct = async () => ({ Component: (await import("./pages/ProductDetail")).ProductDetail });
+const lazyCreateListing = async () => ({ Component: (await import("./pages/CreateListing")).CreateListing });
+const lazyInbox = async () => ({ Component: (await import("./pages/Inbox")).Inbox });
+const lazyDashboard = async () => ({ Component: (await import("./pages/Dashboard")).Dashboard });
+const lazyWantAds = async () => ({ Component: (await import("./pages/WantAds")).WantAds });
+const lazyAdmin = async () => ({ Component: (await import("./pages/AdminPage")).AdminPage });
+const lazyAdminLogin = async () => ({ Component: (await import("./pages/AdminLogin")).AdminLogin });
+const lazyAnnouncements = async () => ({ Component: (await import("./pages/Announcements")).Announcements });
+const lazyWishlist = async () => ({ Component: (await import("./pages/Wishlist")).Wishlist });
+const lazySupport = async () => ({ Component: (await import("./pages/Support")).Support });
 
 export const router = createBrowserRouter([
   {
     path: "/",
     Component: AppLayout,
     children: [
-      { index: true, Component: Home },
-      { path: "browse", Component: BrowseListings },
-      { path: "product/:id", Component: ProductDetail },
-      { path: "want-ads", Component: WantAds },
-      { path: "announcements", Component: Announcements },
-      { path: "verify-email", Component: VerifyEmail },
-      
-      // Protected Routes
+      { index: true, lazy: lazyHome },
+      { path: "browse", lazy: lazyBrowse },
+      { path: "product/:id", lazy: lazyProduct },
+      { path: "want-ads", lazy: lazyWantAds },
+      { path: "announcements", lazy: lazyAnnouncements },
+      { path: "verify-email", lazy: lazyVerifyEmail },
       {
         element: <ProtectedRoute />,
         children: [
-          { path: "create-listing", Component: CreateListing },
-          { path: "edit-listing/:id", Component: CreateListing },
-          { path: "inbox", Component: Inbox },
-          { path: "dashboard", Component: Dashboard },
-          { path: "admin", Component: AdminPage },
-          { path: "wishlist", Component: Wishlist },
+          { path: "create-listing", lazy: lazyCreateListing },
+          { path: "edit-listing/:id", lazy: lazyCreateListing },
+          { path: "inbox", lazy: lazyInbox },
+          { path: "dashboard", lazy: lazyDashboard },
+          { path: "admin", lazy: lazyAdmin },
+          { path: "wishlist", lazy: lazyWishlist },
+          { path: "support", lazy: lazySupport }
         ]
       }
-    ],
+    ]
   },
-  {
-    path: "/login",
-    Component: Login
-  },
-  {
-    path: "/register",
-    Component: Register
-  },
-  {
-    path: "/admin/login",
-    Component: AdminLogin
-  }
+  { path: "/login", lazy: lazyLogin },
+  { path: "/register", lazy: lazyRegister },
+  { path: "/admin/login", lazy: lazyAdminLogin }
 ]);

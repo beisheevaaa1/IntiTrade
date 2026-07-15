@@ -39,7 +39,7 @@ export function Register() {
       if (requiresVerification) setIsSubmitted(true);
       else navigate("/");
     } catch (err: any) {
-      console.error(err);
+      console.error("Request failed");
       setError(err.response?.data?.message || "Registration failed. Try again.");
     } finally {
       setLoading(false);

@@ -5,12 +5,16 @@ import multer from "multer";
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
+import { env } from "../env.js";
+import { prisma } from "../prisma.js";
 
 const uploadDir = path.resolve(process.cwd(), "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
+const MAX_VIDEO_SIZE = env.UPLOAD_MAX_VIDEO_MB * 1024 * 1024;
+const MAX_USER_UPLOAD_BYTES = env.UPLOAD_MAX_USER_MB * 1024 * 1024;
+const MAX_TOTAL_UPLOAD_BYTES = env.UPLOAD_MAX_TOTAL_MB * 1024 * 1024;
 
 const acceptedMimeTypes = new Set([
   "image/jpeg",
@@ -71,9 +75,26 @@ async function removeFile(filePath?: string) {
   await fs.promises.unlink(filePath).catch(() => undefined);
 }
 
+async function uploadUsage(userId: string) {
+  let totalBytes = 0;
+  let userBytes = 0;
+  const entries = await fs.promises.readdir(uploadDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const stat = await fs.promises.stat(path.join(uploadDir, entry.name));
+    totalBytes += stat.size;
+    if (entry.name.startsWith(`${userId}-`)) userBytes += stat.size;
+  }
+  return { totalBytes, userBytes };
+}
+
+export function uploadQuotaExceeded(usage: { totalBytes: number; userBytes: number }) {
+  return usage.totalBytes > MAX_TOTAL_UPLOAD_BYTES || usage.userBytes > MAX_USER_UPLOAD_BYTES;
+}
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, _file, cb) => cb(null, `${crypto.randomUUID()}.upload`)
+  filename: (req, _file, cb) => cb(null, `${req.user!.id}-${crypto.randomUUID()}.upload`)
 });
 
 const upload = multer({
@@ -96,13 +117,19 @@ const uploadRateLimit = createRateLimit({
   message: "Upload limit reached. Please try again later."
 });
 
-router.post("/", requireAuth, uploadRateLimit, (req, res, next) => {
+const uploadIpRateLimit = createRateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 100,
+  message: "Upload limit reached for this network. Please try again later."
+});
+
+router.post("/", requireAuth, uploadIpRateLimit, uploadRateLimit, (req, res, next) => {
   upload.single("file")(req, res, async (uploadError) => {
     const uploadedFile = req.file;
     if (uploadError) {
       await removeFile(uploadedFile?.path);
       if (uploadError instanceof multer.MulterError && uploadError.code === "LIMIT_FILE_SIZE") {
-        return res.status(413).json({ message: "Video files must be under 100MB" });
+        return res.status(413).json({ message: `Video files must be under ${env.UPLOAD_MAX_VIDEO_MB}MB` });
       }
       return res.status(400).json({ message: uploadError.message || "Upload failed" });
     }
@@ -119,6 +146,12 @@ router.post("/", requireAuth, uploadRateLimit, (req, res, next) => {
         return res.status(413).json({ message: "Image files must be under 5MB" });
       }
 
+      const usage = await uploadUsage(req.user!.id);
+      if (uploadQuotaExceeded(usage)) {
+        await removeFile(uploadedFile.path);
+        return res.status(413).json({ message: "Upload storage quota reached. Remove unused media or contact support." });
+      }
+
       const finalName = `${path.parse(uploadedFile.filename).name}.${detected.extension}`;
       const finalPath = path.join(uploadDir, finalName);
       await fs.promises.rename(uploadedFile.path, finalPath);
@@ -129,6 +162,32 @@ router.post("/", requireAuth, uploadRateLimit, (req, res, next) => {
       return next(error);
     }
   });
+});
+
+router.delete("/:filename", requireAuth, uploadRateLimit, async (req, res) => {
+  const filename = req.params.filename;
+  if (!/^[a-zA-Z0-9._-]+$/.test(filename) || !filename.startsWith(`${req.user!.id}-`)) {
+    return res.status(403).json({ message: "You can only delete media uploaded by your account" });
+  }
+  const url = `/uploads/${filename}`;
+  const [listingReference, messageReference, announcementReference, avatarReference] = await Promise.all([
+    prisma.listingImage.findFirst({ where: { url }, select: { id: true } }),
+    prisma.message.findFirst({ where: { attachmentUrl: url }, select: { id: true } }),
+    prisma.announcement.findFirst({
+      where: {
+        imageUrl: url,
+        status: { in: ["PENDING", "ACTIVE"] },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
+      },
+      select: { id: true }
+    }),
+    prisma.user.findFirst({ where: { avatarUrl: url }, select: { id: true } })
+  ]);
+  if (listingReference || messageReference || announcementReference || avatarReference) {
+    return res.status(409).json({ message: "This media is attached to published content and cannot be deleted" });
+  }
+  await removeFile(path.join(uploadDir, filename));
+  res.status(204).send();
 });
 
 export default router;

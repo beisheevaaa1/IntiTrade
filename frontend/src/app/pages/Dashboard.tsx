@@ -54,7 +54,7 @@ export function Dashboard() {
       const blocksRes = await api.get("/community/blocks");
       setBlockedUsers(blocksRes.data.blocks || []);
     } catch (err) {
-      console.error("Error fetching dashboard data:", err);
+      console.error("Error fetching dashboard data:");
     } finally {
       setLoading(false);
     }
@@ -66,18 +66,18 @@ export function Dashboard() {
       setBlockedUsers((current) => current.filter((block) => block.blockedId !== userId));
       alert("User unblocked successfully.");
     } catch (err) {
-      console.error("Error unblocking user:", err);
+      console.error("Error unblocking user:");
       alert("Failed to unblock user.");
     }
   };
 
   useEffect(() => {
-    if (localStorage.getItem("isLoggedIn") !== "true") {
+    if (!user) {
       navigate("/login");
       return;
     }
     fetchDashboardData();
-  }, [navigate]);
+  }, [navigate, user]);
 
   const handleUpdateStatus = async (id: string, status: string) => {
     try {
@@ -85,7 +85,7 @@ export function Dashboard() {
       // Update local state
       setListings(listings.map(l => l.id === id ? { ...l, status: status as any } : l));
     } catch (err) {
-      console.error("Error updating status:", err);
+      console.error("Error updating status:");
       alert("Failed to update status.");
     }
   };
@@ -474,7 +474,7 @@ export function Dashboard() {
   function renderListingRow(item: Listing) {
     const firstImg = item.images?.[0]?.url 
       ? mediaUrl(item.images[0].url)
-      : "https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=100&q=80";
+      : "/placeholder-item.svg";
 
     return (
       <div key={item.id} className="p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4 hover:bg-gray-50 transition-colors">

@@ -5,17 +5,33 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_DB: ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      NODE_ENV: test
-      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DATABASE_URL: postgresql://ci@localhost:5432/ci?schema=public
       JWT_SECRET: ci-only-secret-that-is-longer-than-thirty-two-characters
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -25,21 +41,99 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
         working-directory: backend
+      - name: Audit backend dependencies
+        run: npm audit --audit-level=high
+        working-directory: backend
       - name: Validate Prisma schema
         run: npx prisma validate
         working-directory: backend
+        env:
+          NODE_ENV: test
+      - name: Apply database migrations from an empty database
+        run: |
+          npx prisma migrate deploy
+          npx prisma migrate deploy
+          npx prisma migrate status
+          npx prisma migrate diff --from-schema-datasource=prisma/schema.prisma --to-schema-datamodel=prisma/schema.prisma --exit-code
+        working-directory: backend
+        env:
+          NODE_ENV: test
       - name: Build backend
         run: npm run build
         working-directory: backend
+        env:
+          NODE_ENV: test
       - name: Test backend
         run: npm test
         working-directory: backend
+        env:
+          NODE_ENV: test
       - name: Install frontend dependencies
         run: npm ci
+        working-directory: frontend
+      - name: Audit frontend dependencies
+        run: npm audit --audit-level=high
         working-directory: frontend
       - name: Build frontend
         run: npm run build
         working-directory: frontend
+      - name: Enforce initial JavaScript budget
+        working-directory: frontend
+        run: |
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          import zlib from 'node:zlib';
+          const html = fs.readFileSync('dist/index.html', 'utf8');
+          const source = html.match(/<script[^>]+src="([^"]+\.js)"/)?.[1];
+          if (!source) throw new Error('Initial JavaScript asset was not found');
+          const file = path.join('dist', source.replace(/^\//, ''));
+          const gzipBytes = zlib.gzipSync(fs.readFileSync(file)).byteLength;
+          const budget = 150 * 1024;
+          console.log(`Initial JavaScript: ${(gzipBytes / 1024).toFixed(1)} KiB gzip (budget 150 KiB)`);
+          if (gzipBytes > budget) process.exit(1);
+          EOF
       - name: Type-check frontend
         run: npm run typecheck
         working-directory: frontend
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - name: Run desktop and mobile E2E tests
+        run: npm run test:e2e
+        working-directory: frontend
+      - name: Reject committed credentials
+        shell: bash
+        run: |
+          node <<'EOF'
+          const { execFileSync } = require('node:child_process');
+          const fs = require('node:fs');
+          const files = execFileSync('git', ['ls-files', '-z']).toString().split('\0').filter(Boolean);
+          const findings = [];
+          for (const file of files) {
+            if (/package-lock\.json$|\.example$/i.test(file)) continue;
+            const buffer = fs.readFileSync(file);
+            if (buffer.includes(0) || buffer.length > 2_000_000) continue;
+            const text = buffer.toString('utf8');
+            if (/-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/.test(text)) findings.push(`${file}: private key`);
+            if (/\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^/:\s]+:[^@\s$"{]+@/i.test(text)) findings.push(`${file}: credentialed database URL`);
+            if (/bcrypt\.hash\(\s*["'][^"']{6,}["']/i.test(text)) findings.push(`${file}: hardcoded bcrypt password`);
+            for (const match of text.matchAll(/(?:^|\n)[ \t]*(?:export[ \t]+)?(DB_PASSWORD|POSTGRES_PASSWORD|SSH_PASSWORD|JWT_SECRET)[ \t]*[:=][ \t]*["']?([^\s"'#]+)/gi)) {
+              const [, name, value] = match;
+              if (!value.startsWith('$') && !value.startsWith('process.env') && !value.startsWith('ci-only-') && !value.startsWith('z.')) {
+                findings.push(`${file}: literal ${name}`);
+              }
+            }
+            // Only '-' and '=' provide literal defaults. '?' supplies an
+            // error message when a required variable is absent, not a secret.
+            for (const match of text.matchAll(/\$\{(DB_PASSWORD|POSTGRES_PASSWORD|SSH_PASSWORD|JWT_SECRET)(?::?[-=])["']?([^}\s"']+)/gi)) {
+              const [, name, fallback] = match;
+              if (fallback && !fallback.startsWith('$')) findings.push(`${file}: literal fallback for ${name}`);
+            }
+          }
+          if (findings.length) {
+            console.error(`Credential scan failed:\n${[...new Set(findings)].join('\n')}`);
+            process.exit(1);
+          }
+          console.log('Tracked-file credential scan passed');
+          EOF

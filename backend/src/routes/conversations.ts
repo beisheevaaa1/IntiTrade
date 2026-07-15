@@ -5,6 +5,7 @@ import { prisma } from "../prisma.js";
 import { handleAutoReply } from "../utils/autoReply.js";
 import { ListingStatus, Prisma, TransactionStatus } from "@prisma/client";
 import { createRateLimit } from "../middleware/rateLimit.js";
+import { isOwnedUploadUrl } from "../utils/uploadOwnership.js";
 import { getIo } from "../socket.js";
 
 const router = Router();
@@ -207,6 +208,9 @@ router.post("/:id/messages", requireAuth, messageRateLimit, async (req, res) => 
     offerAmount: z.coerce.number().positive().max(1000000).optional()
   }).refine((data) => Boolean(data.body || data.attachmentUrl || data.offerAmount), "Message content is required").safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Message content is required" });
+  if (parsed.data.attachmentUrl && !isOwnedUploadUrl(req.user!.id, parsed.data.attachmentUrl)) {
+    return res.status(403).json({ message: "You can only attach media uploaded by your account" });
+  }
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: req.params.id, OR: [{ buyerId: req.user!.id }, { sellerId: req.user!.id }] }

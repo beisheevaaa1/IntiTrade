@@ -7,7 +7,7 @@ import { useAuth } from "../../state/AuthContext";
 
 export function AdminLogin() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -19,18 +19,15 @@ export function AdminLogin() {
     setLoading(true);
 
     try {
-      await login(email, password);
-      // Wait for AuthProvider to sync user state. We can fetch profile or check local storage role
-      // to verify if they are actually an admin.
-      const userRole = localStorage.getItem("marketplace_token") ? JSON.parse(atob(localStorage.getItem("marketplace_token")!.split('.')[1])).role : null;
-      
-      if (userRole === "ADMIN") {
+      const loggedInUser = await login(email, password);
+      if (loggedInUser.role === "ADMIN") {
         navigate("/admin");
       } else {
+        await logout();
         setError("Access denied: You do not have administrator privileges.");
       }
     } catch (err: any) {
-      console.error(err);
+      console.error("Request failed");
       setError(err.response?.data?.message || "Invalid credentials.");
     } finally {
       setLoading(false);
@@ -75,16 +72,16 @@ export function AdminLogin() {
           <div className="space-y-4">
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-slate-300 mb-1">
-                Admin Username or Email
+                Admin Email
               </label>
               <Input
                 id="email-address"
                 name="email"
-                type="text"
+                type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. admin"
+                placeholder="admin@example.com"
                 className="bg-slate-950 border-slate-800 text-white placeholder-slate-600 focus:border-primary focus:ring-primary h-11"
               />
             </div>

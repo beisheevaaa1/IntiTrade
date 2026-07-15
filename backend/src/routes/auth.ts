@@ -9,15 +9,29 @@ import { createRateLimit } from "../middleware/rateLimit.js";
 import { createToken, hashToken, sendVerificationEmail } from "../utils/email.js";
 import { sanitizeUser, signAccessToken } from "../utils/auth.js";
 import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, normalizePhone } from "../utils/validation.js";
+import { clearSessionCookie, setSessionCookie } from "../utils/sessionCookie.js";
+import { isOwnedImageUploadUrl } from "../utils/uploadOwnership.js";
 
 const router = Router();
 const allowedEmailDomains = getAllowedEmailDomains(env.ALLOWED_EMAIL_DOMAINS, env.ALLOWED_EMAIL_DOMAIN);
 
-const authRateLimit = createRateLimit({
+const authIpRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
-  key: (req) => `${req.ip}:${String(req.body?.email || "").toLowerCase()}`,
+  max: 30,
+  message: "Too many authentication attempts from this network. Please try again later."
+});
+
+const authAccountRateLimit = createRateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  key: (req) => String(req.body?.email || "unknown-account").trim().toLowerCase(),
   message: "Too many authentication attempts. Please try again later."
+});
+
+const registrationIpRateLimit = createRateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: "Too many accounts were created from this network. Please try again later."
 });
 
 const verificationRateLimit = createRateLimit({
@@ -51,7 +65,7 @@ function accessTokenFor(user: { id: string; role: "STUDENT" | "ADMIN"; tokenVers
   return signAccessToken({ id: user.id, role: user.role, tokenVersion: user.tokenVersion });
 }
 
-router.post("/register", authRateLimit, async (req, res) => {
+router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRateLimit, async (req, res) => {
   const parsed = registerSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid registration data", errors: parsed.error.flatten() });
 
@@ -90,7 +104,7 @@ router.post("/register", authRateLimit, async (req, res) => {
       try {
         await sendVerificationEmail(user.email, rawVerificationToken);
       } catch (error) {
-        console.error("Verification email was not sent:", error);
+        console.error(JSON.stringify({ level: "error", event: "verification_email_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
         return res.status(503).json({
           message: "Your account was created, but the verification email could not be sent. Please use resend verification later.",
           requiresVerification: true
@@ -98,9 +112,9 @@ router.post("/register", authRateLimit, async (req, res) => {
       }
     }
 
+    if (!rawVerificationToken) setSessionCookie(res, accessTokenFor(user));
     res.status(201).json({
       user: sanitizeUser(user),
-      token: rawVerificationToken ? undefined : accessTokenFor(user),
       requiresVerification: Boolean(rawVerificationToken)
     });
   } catch (error) {
@@ -111,7 +125,7 @@ router.post("/register", authRateLimit, async (req, res) => {
   }
 });
 
-router.post("/verify-email", verificationRateLimit, async (req, res) => {
+router.post("/verify-email", authIpRateLimit, verificationRateLimit, async (req, res) => {
   if (!env.EMAIL_VERIFICATION_REQUIRED) return res.status(404).json({ message: "Email verification is not enabled" });
 
   const parsed = z.object({ token: z.string().min(32).max(200) }).safeParse(req.body);
@@ -126,10 +140,11 @@ router.post("/verify-email", verificationRateLimit, async (req, res) => {
     return updated;
   });
 
-  res.json({ user: sanitizeUser(user), token: accessTokenFor(user) });
+  setSessionCookie(res, accessTokenFor(user));
+  res.json({ user: sanitizeUser(user) });
 });
 
-router.post("/resend-verification", verificationRateLimit, async (req, res) => {
+router.post("/resend-verification", authIpRateLimit, verificationRateLimit, async (req, res) => {
   const parsed = z.object({ email: z.string().trim().email() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "A valid email is required" });
 
@@ -150,8 +165,12 @@ router.post("/resend-verification", verificationRateLimit, async (req, res) => {
   res.json(genericResponse);
 });
 
-router.post("/login", authRateLimit, async (req, res) => {
-  const parsed = z.object({ email: z.string().trim().email(), password: z.string().min(1).max(200) }).safeParse(req.body);
+router.post("/login", authIpRateLimit, authAccountRateLimit, async (req, res) => {
+  const parsed = z.object({
+    email: z.string().trim().email(),
+    password: z.string().min(1).max(200),
+    rememberMe: z.boolean().optional().default(false)
+  }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid login data" });
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
@@ -162,7 +181,8 @@ router.post("/login", authRateLimit, async (req, res) => {
   if (env.EMAIL_VERIFICATION_REQUIRED && !user.isVerified) return res.status(403).json({ message: "Verify your email before logging in" });
   if (user.isBlocked) return res.status(403).json({ message: "Your account is blocked" });
 
-  res.json({ user: sanitizeUser(user), token: accessTokenFor(user) });
+  setSessionCookie(res, accessTokenFor(user), parsed.data.rememberMe);
+  res.json({ user: sanitizeUser(user) });
 });
 
 router.get("/me", requireAuth, async (req, res) => {
@@ -195,6 +215,13 @@ router.patch("/profile", requireAuth, async (req, res) => {
   const parsed = updateProfileSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid profile data", errors: parsed.error.flatten() });
 
+  if (parsed.data.avatarUrl) {
+    const current = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { avatarUrl: true } });
+    if (parsed.data.avatarUrl !== current?.avatarUrl && !isOwnedImageUploadUrl(req.user!.id, parsed.data.avatarUrl)) {
+      return res.status(403).json({ message: "A profile can only use an image uploaded by its owner" });
+    }
+  }
+
   try {
     const updated = await prisma.user.update({ where: { id: req.user!.id }, data: parsed.data });
     res.json({ user: sanitizeUser(updated) });
@@ -208,6 +235,7 @@ router.patch("/profile", requireAuth, async (req, res) => {
 
 router.post("/logout", requireAuth, async (req, res) => {
   await prisma.user.update({ where: { id: req.user!.id }, data: { tokenVersion: { increment: 1 } } });
+  clearSessionCookie(res);
   res.status(204).send();
 });
 

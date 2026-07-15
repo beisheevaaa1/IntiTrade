@@ -1,0 +1,27 @@
+name: Production smoke check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check public pages and API readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          html="$(curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/)"
+          curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/browse >/dev/null
+          curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/api/health | grep -q '"ok":true'
+          curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/api/health/ready | grep -q '"ready":true'
+          curl --fail --silent --show-error --retry 2 --max-time 15 https://adelina.adilkan.com/ >/dev/null
+          asset="$(printf '%s' "$html" | grep -oE 'src="/assets/[^"]+\.js"' | head -n1 | cut -d'"' -f2)"
+          test -n "$asset"
+          curl --fail --silent --show-error --retry 2 --max-time 15 "https://intitrade.shop${asset}" >/dev/null

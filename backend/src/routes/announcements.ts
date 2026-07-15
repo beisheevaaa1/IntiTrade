@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
+import { isOwnedImageUploadUrl } from "../utils/uploadOwnership.js";
 
 const router = Router();
 
@@ -35,6 +36,9 @@ router.get("/mine", requireAuth, async (req, res) => {
 router.post("/", requireAuth, async (req, res) => {
   const parsed = announcementSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid announcement", errors: parsed.error.flatten() });
+  if (parsed.data.imageUrl && !isOwnedImageUploadUrl(req.user!.id, parsed.data.imageUrl)) {
+    return res.status(403).json({ message: "An announcement can only use an image uploaded by its author" });
+  }
   const announcement = await prisma.announcement.create({
     data: { ...parsed.data, authorId: req.user!.id, status: req.user!.role === Role.ADMIN ? AnnouncementStatus.ACTIVE : AnnouncementStatus.PENDING }
   });

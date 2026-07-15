@@ -18,6 +18,7 @@ export function AppLayout() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const dropdownRef = React.useRef<HTMLFormElement | null>(null);
+  const notificationRef = React.useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) {
@@ -27,7 +28,7 @@ export function AppLayout() {
     const delayDebounce = setTimeout(() => {
       api.get("/listings/autocomplete", { params: { q: searchQuery } })
         .then((res) => setSuggestions(res.data.suggestions || []))
-        .catch((err) => console.error(err));
+        .catch((err) => console.error("Request failed"));
     }, 250);
 
     return () => clearTimeout(delayDebounce);
@@ -38,9 +39,22 @@ export function AppLayout() {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowSuggestions(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
+        setShowNotifications(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowSuggestions(false);
+        setShowNotifications(false);
+      }
     };
     document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
   }, []);
 
   useEffect(() => {
@@ -64,10 +78,15 @@ export function AppLayout() {
   }, [user?.id]);
 
   const openNotifications = async () => {
-    setShowNotifications((value) => !value);
-    if (notifications.some((notification) => !notification.readAt)) {
-      await api.patch("/community/notifications/read");
-      setNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt || new Date().toISOString() })));
+    const willOpen = !showNotifications;
+    setShowNotifications(willOpen);
+    if (willOpen && notifications.some((notification) => !notification.readAt)) {
+      try {
+        await api.patch("/community/notifications/read");
+        setNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt || new Date().toISOString() })));
+      } catch {
+        // Keep the panel usable and retry marking notifications on next open.
+      }
     }
   };
 
@@ -143,14 +162,14 @@ export function AppLayout() {
               {unreadMessages > 0 && <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-primary text-white text-[10px] rounded-full flex items-center justify-center">{unreadMessages}</span>}
             </Button>
             
-            <div className="relative">
+            <div className="relative" ref={notificationRef}>
               <Button variant="ghost" size="icon" className="relative text-foreground" onClick={openNotifications}>
                 <Bell className="h-5 w-5" />
                 {notifications.some((notification) => !notification.readAt) && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />}
               </Button>
               {showNotifications && <div className="absolute right-0 top-12 w-80 max-w-[80vw] bg-white border border-border shadow-xl rounded-2xl p-3 z-50">
                 <p className="font-bold px-2 py-2">Notifications</p>
-                {notifications.length === 0 ? <p className="text-sm text-muted-foreground px-2 py-5 text-center">No notifications yet.</p> : notifications.slice(0, 8).map((notification) => <div key={notification.id} className="p-3 border-t text-sm"><p className="font-medium">{notification.type === "RESERVATION_CREATED" ? "New reservation or booking" : notification.type.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground mt-1">{new Date(notification.createdAt).toLocaleString()}</p></div>)}
+                {notifications.length === 0 ? <p className="text-sm text-muted-foreground px-2 py-5 text-center">No notifications yet.</p> : notifications.slice(0, 8).map((notification) => <button type="button" key={notification.id} onClick={() => { if (notification.type.startsWith("SUPPORT_TICKET")) { navigate(user?.role === "ADMIN" ? "/admin?tab=support" : "/support"); setShowNotifications(false); } }} className={`p-3 border-t text-sm w-full text-left ${notification.type.startsWith("SUPPORT_TICKET") ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}><p className="font-medium">{notification.type === "RESERVATION_CREATED" ? "New reservation or booking" : notification.type.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground mt-1">{new Date(notification.createdAt).toLocaleString()}</p></button>)}
               </div>}
             </div>
 
@@ -250,7 +269,7 @@ export function AppLayout() {
                 <span className="font-bold text-2xl text-foreground">IntiTrade</span>
               </div>
               <p className="text-muted-foreground text-sm mb-4 leading-relaxed">
-                A trusted marketplace exclusively for verified INTI students, staff, and professors. Buy and sell safely within your campus community.
+                A campus marketplace for the INTI community. Discover listings, connect with sellers, and trade more confidently in one place.
               </p>
             </div>
             
@@ -267,8 +286,8 @@ export function AppLayout() {
             <div>
               <h4 className="font-semibold text-foreground mb-4">Support</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><Link to="#" className="hover:text-primary transition-colors">Help Centre</Link></li>
-                <li><Link to="#" className="hover:text-primary transition-colors">Contact Us</Link></li>
+                <li><Link to="/support" className="hover:text-primary transition-colors">Help Centre</Link></li>
+                <li><Link to="/support" className="hover:text-primary transition-colors">Contact Support</Link></li>
                 <li><Link to="/announcements" className="hover:text-primary transition-colors">Campus announcements</Link></li>
               </ul>
             </div>

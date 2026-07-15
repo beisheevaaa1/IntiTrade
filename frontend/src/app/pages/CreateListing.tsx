@@ -81,7 +81,7 @@ export function CreateListing() {
       setHideTipLocal(true);
       alert("Academic Portfolio enabled successfully! You can customize your resume and projects in Settings.");
     } catch (err) {
-      console.error(err);
+      console.error("Request failed");
       alert("Failed to enable academic profile.");
     }
   };
@@ -94,12 +94,12 @@ export function CreateListing() {
       updateUser({ academicTipShown: true });
       setHideTipLocal(true);
     } catch (err) {
-      console.error(err);
+      console.error("Request failed");
     }
   };
 
   useEffect(() => {
-    if (localStorage.getItem("isLoggedIn") !== "true") {
+    if (!user) {
       navigate("/login");
     }
     // Fetch active categories
@@ -110,7 +110,7 @@ export function CreateListing() {
           setSelectedCategoryId(res.data.categories[0].id);
         }
       })
-      .catch((err) => console.error("Error fetching categories:", err));
+      .catch((err) => console.error("Error fetching categories:"));
     api.get("/community/meetup-points").then((res) => {
       setMeetupPoints(res.data.meetupPoints);
       if (res.data.meetupPoints.length > 0 && !id) {
@@ -143,7 +143,7 @@ export function CreateListing() {
           setImages(l.images.map((img: any) => img.url));
         })
         .catch((err) => {
-          console.error("Error loading listing for edit:", err);
+          console.error("Error loading listing for edit:");
           setError("Failed to load listing details.");
         });
     } else {
@@ -221,8 +221,8 @@ export function CreateListing() {
             setError("A listing can contain up to 5 videos.");
             continue;
           }
-          if (file.size > 100 * 1024 * 1024) {
-            setError(`${file.name}: video size must be less than 100MB.`);
+          if (file.size > 25 * 1024 * 1024) {
+            setError(`${file.name}: video size must be less than 25MB.`);
             continue;
           }
         } else if (isImageFile(file)) {
@@ -318,7 +318,7 @@ export function CreateListing() {
         navigate("/dashboard");
       }, 2000);
     } catch (err: any) {
-      console.error(err);
+      console.error("Request failed");
       setError(err.response?.data?.message || "Failed to publish listing. Please verify inputs.");
     } finally {
       setIsPublishing(false);
@@ -396,7 +396,7 @@ export function CreateListing() {
             <Card>
               <CardContent className="p-6">
                 <p className="text-sm text-muted-foreground mb-4">
-                  Add up to 20 photos (under 5MB each) and videos (under 100MB). The first image will be your listing cover.
+                  Add up to 20 photos (under 5MB each) and 5 videos (under 25MB). The first image will be your listing cover.
                 </p>
                 
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">

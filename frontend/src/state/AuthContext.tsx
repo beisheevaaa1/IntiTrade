@@ -4,9 +4,8 @@ import type { User } from "../types";
 
 type AuthContextValue = {
   user: User | null;
-  token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
   register: (name: string, email: string, phone: string, password: string) => Promise<boolean>;
   verifyEmail: (token: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -18,53 +17,40 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("marketplace_token"));
-  const [loading, setLoading] = useState(Boolean(token));
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    // Remove credentials left by older builds. Authentication now uses an
+    // HttpOnly, Secure cookie that frontend JavaScript cannot read or export.
+    localStorage.removeItem("marketplace_token");
+    localStorage.removeItem("isLoggedIn");
     api.get("/auth/me")
       .then((response) => {
         setUser(response.data.user);
-        localStorage.setItem("isLoggedIn", "true");
       })
       .catch(() => {
-        localStorage.removeItem("marketplace_token");
-        localStorage.removeItem("isLoggedIn");
-        setToken(null);
+        setUser(null);
       })
       .finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
-    token,
     loading,
-    async login(email, password) {
-      const response = await api.post("/auth/login", { email, password });
-      localStorage.setItem("marketplace_token", response.data.token);
-      localStorage.setItem("isLoggedIn", "true");
-      setToken(response.data.token);
+    async login(email, password, rememberMe = false) {
+      const response = await api.post("/auth/login", { email, password, rememberMe });
       setUser(response.data.user);
+      return response.data.user;
     },
     async register(name, email, phone, password) {
       const response = await api.post("/auth/register", { name, email, phone, password });
-      if (response.data.token) {
-        localStorage.setItem("marketplace_token", response.data.token);
-        localStorage.setItem("isLoggedIn", "true");
-        setToken(response.data.token);
+      if (!response.data.requiresVerification) {
         setUser(response.data.user);
       }
       return Boolean(response.data.requiresVerification);
     },
     async verifyEmail(verificationToken) {
       const response = await api.post("/auth/verify-email", { token: verificationToken });
-      localStorage.setItem("marketplace_token", response.data.token);
-      localStorage.setItem("isLoggedIn", "true");
-      setToken(response.data.token);
       setUser(response.data.user);
     },
     async logout() {
@@ -73,9 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // Always clear the local session even if the server is unavailable.
       }
-      localStorage.removeItem("marketplace_token");
-      localStorage.removeItem("isLoggedIn");
-      setToken(null);
       setUser(null);
     },
     updateUser(updated) {
@@ -85,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const response = await api.get("/auth/me");
       setUser(response.data.user);
     }
-  }), [loading, token, user]);
+  }), [loading, user]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

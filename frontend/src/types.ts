@@ -4,6 +4,9 @@ export type ListingType = "PRODUCT" | "SERVICE" | "COURSE";
 export type ListingCondition = "NEW" | "LIKE_NEW" | "GOOD" | "FAIR" | "NOT_APPLICABLE";
 export type ListingStatus = "PENDING" | "ACTIVE" | "SOLD" | "ARCHIVED" | "REJECTED";
 export type ReportStatus = "OPEN" | "REVIEWED" | "DISMISSED" | "ACTIONED";
+export type SupportTicketCategory = "ACCOUNT" | "LISTING" | "TRANSACTION" | "SAFETY" | "TECHNICAL" | "OTHER";
+export type SupportTicketStatus = "OPEN" | "IN_PROGRESS" | "WAITING_FOR_USER" | "RESOLVED" | "CLOSED";
+export type SupportTicketPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 
 export type User = {
   id: string;
@@ -180,4 +183,40 @@ export type Announcement = {
   rejectionReason?: string | null;
   author?: Pick<User, "id" | "name" | "avatarUrl" | "faculty">;
   createdAt: string;
+};
+
+export type SupportTicket = {
+  id: string;
+  subject: string;
+  description: string;
+  category: SupportTicketCategory;
+  status: SupportTicketStatus;
+  priority: SupportTicketPriority;
+  resolvedAt?: string | null;
+  lastMessageAt: string;
+  userId: string;
+  assignedAdminId?: string | null;
+  user?: Pick<User, "id" | "name" | "email">;
+  assignedAdmin?: Pick<User, "id" | "name"> | null;
+  messages?: SupportTicketMessage[];
+  _count?: { messages: number };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SupportTicketMessage = {
+  id: string;
+  body: string;
+  isAdmin: boolean;
+  ticketId: string;
+  authorId: string;
+  author?: Pick<User, "id" | "name"> | null;
+  createdAt: string;
+};
+
+export type Pagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 };

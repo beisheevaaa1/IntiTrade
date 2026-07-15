@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
+import { canAttachMediaUrl } from "../utils/uploadOwnership.js";
 
 const router = Router();
 
@@ -90,8 +91,16 @@ router.get("/", async (req, res) => {
   const minPrice = Number(text("minPrice"));
   const maxPrice = Number(text("maxPrice"));
   const minRating = Number(text("minRating"));
+  const normalizedMinRating = Number.isFinite(minRating) ? Math.max(1, Math.min(5, minRating)) : undefined;
   const page = Math.max(1, Number.parseInt(text("page") ?? "1", 10) || 1);
   const limit = Math.min(50, Math.max(1, Number.parseInt(text("limit") ?? "20", 10) || 20));
+
+  const ratedSellerIds = normalizedMinRating === undefined
+    ? undefined
+    : (await prisma.review.groupBy({
+        by: ["revieweeId"],
+        having: { rating: { _avg: { gte: normalizedMinRating } } }
+      })).map((review) => review.revieweeId);
 
   const where: Prisma.ListingWhereInput = {
     status: ListingStatus.ACTIVE,
@@ -102,12 +111,10 @@ router.get("/", async (req, res) => {
     location: text("location") ? { contains: text("location"), mode: "insensitive" } : undefined,
     courseCode: text("courseCode") ? { contains: text("courseCode"), mode: "insensitive" } : undefined,
     isbn: text("isbn") ? { contains: text("isbn"), mode: "insensitive" } : undefined,
-    seller: sellerType || Number.isFinite(minRating)
+    seller: sellerType || ratedSellerIds
       ? {
           sellerType,
-          reviewsReceived: Number.isFinite(minRating)
-            ? { some: { rating: { gte: Math.max(1, Math.min(5, minRating)) } } }
-            : undefined
+          id: ratedSellerIds ? { in: ratedSellerIds } : undefined
         }
       : undefined,
     price: {
@@ -186,6 +193,9 @@ router.post("/", requireAuth, async (req, res) => {
   const parsed = listingSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing data", errors: parsed.error.flatten() });
   const data = parsed.data;
+  if ((data.imageUrls ?? []).some((url) => !canAttachMediaUrl(req.user!.id, url))) {
+    return res.status(403).json({ message: "A listing can only use media uploaded by its seller" });
+  }
   const listing = await prisma.listing.create({
     data: {
       title: data.title,
@@ -218,17 +228,21 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 router.patch("/:id", requireAuth, async (req, res) => {
-  const existing = await prisma.listing.findUnique({ where: { id: req.params.id } });
+  const existing = await prisma.listing.findUnique({ where: { id: req.params.id }, include: { images: { select: { url: true } } } });
   if (!existing) return res.status(404).json({ message: "Listing not found" });
-  if (existing.sellerId !== req.user!.id && req.user!.role !== Role.ADMIN) return res.status(403).json({ message: "Not allowed" });
+  if (existing.sellerId !== req.user!.id) return res.status(403).json({ message: "Only the seller can edit this listing" });
   const parsed = listingSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing data", errors: parsed.error.flatten() });
   const { imageUrls, ...data } = parsed.data;
+  const existingImageUrls = new Set(existing.images.map((image) => image.url));
+  if ((imageUrls ?? []).some((url) => !existingImageUrls.has(url) && !canAttachMediaUrl(req.user!.id, url))) {
+    return res.status(403).json({ message: "A listing can only use media uploaded by its seller" });
+  }
   const updateData: Prisma.ListingUncheckedUpdateInput = {
     ...data,
     isRecurring: data.type ? data.type !== ListingType.PRODUCT : undefined,
     condition: data.type && data.type !== ListingType.PRODUCT ? ListingCondition.NOT_APPLICABLE : data.condition,
-    status: req.user!.role === Role.ADMIN ? undefined : ListingStatus.PENDING,
+    status: ListingStatus.PENDING,
     images: imageUrls ? { deleteMany: {}, create: imageUrls.map((url) => ({ url })) } : undefined
   };
   const updated = await prisma.listing.update({
@@ -246,7 +260,7 @@ router.patch("/:id/status", requireAuth, async (req, res) => {
   if (!listing) return res.status(404).json({ message: "Listing not found" });
   const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED];
   const sellerAllowed = listing.sellerId === req.user!.id && sellerStatuses.includes(parsed.data.status);
-  if (!sellerAllowed && req.user!.role !== Role.ADMIN) return res.status(403).json({ message: "Not allowed" });
+  if (!sellerAllowed) return res.status(403).json({ message: "Only the seller can change this listing status" });
   const updated = await prisma.listing.update({ where: { id: listing.id }, data: { status: parsed.data.status }, include: listingInclude });
   res.json({ listing: presentListing(updated) });
 });

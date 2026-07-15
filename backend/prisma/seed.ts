@@ -1,6 +1,29 @@
 import { PrismaClient, ListingCondition, ListingStatus, ListingType, Role, SellerType, TransactionStatus } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
+if (process.env.NODE_ENV === "production") {
+  throw new Error("Production database seeding is disabled");
+}
+if (process.env.ALLOW_DESTRUCTIVE_SEED !== "true") {
+  throw new Error("Set ALLOW_DESTRUCTIVE_SEED=true only for a disposable development database");
+}
+
+function requiredSeedValue(name: "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PASSWORD" | "SEED_STUDENT_PASSWORD") {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required for development seeding`);
+  return value;
+}
+
+const seedAdminEmail = requiredSeedValue("SEED_ADMIN_EMAIL").toLowerCase();
+const seedAdminPassword = requiredSeedValue("SEED_ADMIN_PASSWORD");
+const seedStudentPassword = requiredSeedValue("SEED_STUDENT_PASSWORD");
+if (!seedAdminEmail.includes("@") || Buffer.byteLength(seedAdminPassword, "utf8") < 12 || Buffer.byteLength(seedAdminPassword, "utf8") > 72) {
+  throw new Error("Use a valid SEED_ADMIN_EMAIL and a unique 12-72 byte SEED_ADMIN_PASSWORD");
+}
+if (Buffer.byteLength(seedStudentPassword, "utf8") < 12 || Buffer.byteLength(seedStudentPassword, "utf8") > 72) {
+  throw new Error("SEED_STUDENT_PASSWORD must contain 12-72 bytes");
+}
+
 const prisma = new PrismaClient();
 
 const categories = [
@@ -160,6 +183,8 @@ async function main() {
   await prisma.report.deleteMany();
   await prisma.favorite.deleteMany();
   await prisma.message.deleteMany();
+  await prisma.supportTicketMessage.deleteMany();
+  await prisma.supportTicket.deleteMany();
   await prisma.conversation.deleteMany();
   await prisma.listingImage.deleteMany();
   await prisma.listing.deleteMany();
@@ -188,10 +213,10 @@ async function main() {
   ]);
 
   console.log("Seeding admin...");
-  const adminPassword = await bcrypt.hash("admin123", 12);
-  const admin = await prisma.user.create({
+  const adminPassword = await bcrypt.hash(seedAdminPassword, 12);
+  await prisma.user.create({
     data: {
-      email: "admin",
+      email: seedAdminEmail,
       name: "Campus Administrator",
       passwordHash: adminPassword,
       role: Role.ADMIN,
@@ -199,18 +224,8 @@ async function main() {
     }
   });
 
-  await prisma.user.create({
-    data: {
-      email: "admin@student.newinti.edu.my",
-      name: "Campus Administrator (Official)",
-      passwordHash: adminPassword,
-      role: Role.ADMIN,
-      isVerified: true
-    }
-  });
-
   console.log("Seeding 10 student accounts with academic profiles...");
-  const studentPassword = await bcrypt.hash("12345678", 12);
+  const studentPassword = await bcrypt.hash(seedStudentPassword, 12);
   const students = [];
   const campusAreas = ["Block A Residence", "Block B Residence", "Hostel Block C", "Off-campus Apartment", "Taman Metropolitan"];
 
@@ -405,7 +420,7 @@ main()
     await prisma.$disconnect();
   })
   .catch(async (error) => {
-    console.error(error);
+    console.error(JSON.stringify({ level: "error", event: "development_seed_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
     await prisma.$disconnect();
     process.exit(1);
   });

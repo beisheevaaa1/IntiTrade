@@ -15,22 +15,31 @@ import {
   Unlock,
   GraduationCap,
   Star,
-  Megaphone
+  Megaphone,
+  LifeBuoy,
+  Activity,
+  ScrollText,
+  RefreshCw
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { useAuth } from "../../state/AuthContext";
 import { api, mediaUrl } from "../../api/client";
-import type { User, Listing, Report, Transaction, Announcement } from "../../types";
+import type { User, Listing, Report, Transaction, Announcement, Pagination, SupportTicket, SupportTicketMessage, SupportTicketPriority, SupportTicketStatus } from "../../types";
 
 export function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   
-  const [activeTab, setActiveTab] = useState<"moderation" | "students" | "transactions" | "reports" | "reviews" | "announcements" | "disputes">("moderation");
+  type AdminTab = "moderation" | "students" | "transactions" | "reports" | "reviews" | "announcements" | "disputes" | "support" | "audit" | "system";
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return requested === "support" || requested === "audit" || requested === "system" ? requested : "moderation";
+  });
   
   // Data States
   const [pendingListings, setPendingListings] = useState<Listing[]>([]);
@@ -40,6 +49,20 @@ export function AdminPage() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [disputes, setDisputes] = useState<Transaction[]>([]);
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+  const [supportDrafts, setSupportDrafts] = useState<Record<string, { status: SupportTicketStatus; priority: SupportTicketPriority; reply: string }>>({});
+  const [supportConversations, setSupportConversations] = useState<Record<string, { loading: boolean; messages: SupportTicketMessage[]; pagination?: Pagination; error?: string }>>({});
+  const [openSupportTicketId, setOpenSupportTicketId] = useState<string | null>(null);
+  const [supportPagination, setSupportPagination] = useState<Pagination>({ page: 1, limit: 20, total: 0, totalPages: 1 });
+  const [supportPage, setSupportPage] = useState(1);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [supportOpenCount, setSupportOpenCount] = useState(0);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPagination, setAuditPagination] = useState<Pagination>({ page: 1, limit: 25, total: 0, totalPages: 1 });
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditFilter, setAuditFilter] = useState("");
+  const [systemSnapshot, setSystemSnapshot] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
   // Rejection Dialog State
@@ -53,45 +76,80 @@ export function AdminPage() {
   const [selectedGroup, setSelectedGroup] = useState("ALL"); // e.g. "inti_i000001" to "inti_i000005"
   
   const [listingSearch, setListingSearch] = useState("");
+  const [supportSearch, setSupportSearch] = useState("");
+  const [supportStatusFilter, setSupportStatusFilter] = useState<SupportTicketStatus | "ALL">("ALL");
+  const [supportPriorityFilter, setSupportPriorityFilter] = useState<SupportTicketPriority | "ALL">("ALL");
 
-  const fetchData = async () => {
+  const fetchData = async (tab: AdminTab) => {
     setLoading(true);
     try {
-      // Get all pending listings
-      const listingsRes = await api.get("/admin/listings");
-      const allListings: Listing[] = listingsRes.data.listings || [];
-      setPendingListings(allListings.filter(l => l.status === "PENDING"));
-
-      // Get students
-      const usersRes = await api.get("/admin/users");
-      const allUsers: User[] = usersRes.data.users || [];
-      setStudents(allUsers.filter(u => u.role === "STUDENT"));
-
-      // Get transactions
-      const txsRes = await api.get("/admin/transactions");
-      setTransactions(txsRes.data.transactions || []);
-
-      // Get disputes
-      const disputesRes = await api.get("/admin/disputes");
-      setDisputes(disputesRes.data.disputes || []);
-
-      // Get reports
-      const reportsRes = await api.get("/admin/reports");
-      setReports(reportsRes.data.reports || []);
-      const reviewsRes = await api.get("/admin/reviews");
-      setReviews(reviewsRes.data.reviews || []);
-      const announcementsRes = await api.get("/admin/announcements");
-      setAnnouncements(announcementsRes.data.announcements || []);
+      if (tab === "moderation") {
+        const response = await api.get("/admin/listings");
+        setPendingListings((response.data.listings || []).filter((listing: Listing) => listing.status === "PENDING"));
+      } else if (tab === "students") {
+        const response = await api.get("/admin/users");
+        setStudents((response.data.users || []).filter((student: User) => student.role === "STUDENT"));
+      } else if (tab === "transactions") {
+        const response = await api.get("/admin/transactions");
+        setTransactions(response.data.transactions || []);
+      } else if (tab === "disputes") {
+        const response = await api.get("/admin/disputes");
+        setDisputes(response.data.disputes || []);
+      } else if (tab === "reports") {
+        const response = await api.get("/admin/reports");
+        setReports(response.data.reports || []);
+      } else if (tab === "reviews") {
+        const response = await api.get("/admin/reviews");
+        setReviews(response.data.reviews || []);
+      } else if (tab === "announcements") {
+        const response = await api.get("/admin/announcements");
+        setAnnouncements(response.data.announcements || []);
+      } else if (tab === "audit") {
+        const response = await api.get("/admin/logs", { params: { page: auditPage, limit: 25, action: auditFilter || undefined } });
+        setAuditLogs(response.data.logs || []);
+        setAuditPagination(response.data.pagination || { page: auditPage, limit: 25, total: 0, totalPages: 1 });
+      } else if (tab === "system") {
+        const response = await api.get("/admin/system");
+        setSystemSnapshot(response.data);
+      }
     } catch (err) {
-      console.error("Error fetching admin data:", err);
+      console.error("Error fetching admin data:");
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchSupportData = async () => {
+    setSupportLoading(true);
+    try {
+      const response = await api.get("/support/admin", {
+        params: {
+          page: supportPage,
+          limit: 20,
+          q: supportSearch.trim() || undefined,
+          status: supportStatusFilter === "ALL" ? undefined : supportStatusFilter,
+          priority: supportPriorityFilter === "ALL" ? undefined : supportPriorityFilter
+        }
+      });
+      const tickets: SupportTicket[] = response.data.tickets || [];
+      setSupportTickets(tickets);
+      setSupportOpenCount(response.data.openCount || 0);
+      setSupportPagination(response.data.pagination || { page: supportPage, limit: 20, total: 0, totalPages: 1 });
+      setSupportDrafts((current) => Object.fromEntries(tickets.map((ticket) => [ticket.id, {
+        status: ticket.status,
+        priority: ticket.priority,
+        reply: current[ticket.id]?.reply || ""
+      }])));
+    } catch (err) {
+      console.error("Error fetching support tickets:");
+    } finally {
+      setSupportLoading(false);
+    }
+  };
+
   useEffect(() => {
     // Only admins can see this page
-    if (localStorage.getItem("isLoggedIn") !== "true") {
+    if (!user) {
       navigate("/login");
       return;
     }
@@ -99,8 +157,19 @@ export function AdminPage() {
       navigate("/");
       return;
     }
-    fetchData();
-  }, [user, navigate]);
+    void fetchData(activeTab);
+  }, [user, navigate, activeTab, auditPage, auditFilter]);
+
+  useEffect(() => {
+    if (user?.role !== "ADMIN") return;
+    api.get("/admin/overview").then((response) => setSupportOpenCount(response.data.openSupportTickets || 0)).catch(() => undefined);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.role !== "ADMIN" || activeTab !== "support") return;
+    const timer = window.setTimeout(() => { void fetchSupportData(); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [user?.id, activeTab, supportPage, supportSearch, supportStatusFilter, supportPriorityFilter]);
 
   const handleApprove = async (id: string) => {
     setActionLoading(true);
@@ -109,7 +178,7 @@ export function AdminPage() {
       setPendingListings(pendingListings.filter(l => l.id !== id));
       alert("Listing approved successfully!");
     } catch (err) {
-      console.error(err);
+      console.error("Request failed");
       alert("Action failed.");
     } finally {
       setActionLoading(false);
@@ -131,7 +200,7 @@ export function AdminPage() {
       setRejectionReason("");
       alert("Listing rejected.");
     } catch (err) {
-      console.error(err);
+      console.error("Request failed");
       alert("Action failed.");
     } finally {
       setActionLoading(false);
@@ -140,12 +209,14 @@ export function AdminPage() {
 
   const handleToggleBlock = async (studentId: string, currentlyBlocked: boolean) => {
     if (!confirm(`Are you sure you want to ${currentlyBlocked ? 'unblock' : 'block'} this student?`)) return;
+    const reason = currentlyBlocked ? undefined : window.prompt("Please provide a reason for blocking this user:")?.trim();
+    if (!currentlyBlocked && (!reason || reason.length < 3)) return;
     try {
-      await api.patch(`/admin/users/${studentId}/block`, { isBlocked: !currentlyBlocked });
+      await api.patch(`/admin/users/${studentId}/block`, { isBlocked: !currentlyBlocked, reason });
       setStudents(students.map(s => s.id === studentId ? { ...s, isBlocked: !currentlyBlocked } : s));
       alert(`User status updated.`);
     } catch (err) {
-      console.error(err);
+      console.error("Request failed");
       alert("Failed to update user block status.");
     }
   };
@@ -156,7 +227,7 @@ export function AdminPage() {
       setReports(reports.map(r => r.id === reportId ? { ...r, status: "DISMISSED" as any } : r));
       alert("Report dismissed.");
     } catch (err) {
-      console.error(err);
+      console.error("Request failed");
       alert("Action failed.");
     }
   };
@@ -178,8 +249,73 @@ export function AdminPage() {
       setDisputes(disputes.filter(d => d.id !== id));
       alert(`Dispute resolved as ${verdict}`);
     } catch (err: any) {
-      console.error(err);
+      console.error("Request failed");
       alert(err.response?.data?.message || "Action failed.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const loadSupportConversation = async (ticketId: string, page = 1, append = false) => {
+    setSupportConversations((current) => ({
+      ...current,
+      [ticketId]: {
+        loading: true,
+        messages: append ? current[ticketId]?.messages || [] : [],
+        pagination: current[ticketId]?.pagination
+      }
+    }));
+    try {
+      const response = await api.get(`/support/admin/${ticketId}/messages`, { params: { page, limit: 100 } });
+      setSupportConversations((current) => ({
+        ...current,
+        [ticketId]: {
+          loading: false,
+          messages: append ? [...(response.data.messages || []), ...(current[ticketId]?.messages || [])] : response.data.messages || [],
+          pagination: response.data.pagination
+        }
+      }));
+    } catch {
+      setSupportConversations((current) => ({
+        ...current,
+        [ticketId]: {
+          loading: false,
+          messages: current[ticketId]?.messages || [],
+          pagination: current[ticketId]?.pagination,
+          error: "The ticket conversation could not be loaded."
+        }
+      }));
+    }
+  };
+
+  const toggleSupportConversation = (ticketId: string) => {
+    const next = openSupportTicketId === ticketId ? null : ticketId;
+    setOpenSupportTicketId(next);
+    if (next && !supportConversations[next]?.messages.length) void loadSupportConversation(next);
+  };
+
+  const updateSupportTicket = async (ticketId: string) => {
+    const draft = supportDrafts[ticketId];
+    if (!draft) return;
+    setActionLoading(true);
+    try {
+      const reply = draft.reply.trim();
+      const response = await api.patch(`/support/admin/${ticketId}`, {
+        status: draft.status,
+        priority: draft.priority,
+        ...(reply ? { reply } : {})
+      });
+      const updated: SupportTicket = response.data.ticket;
+      setSupportTickets((current) => current.map((ticket) => ticket.id === ticketId ? updated : ticket));
+      setSupportDrafts((current) => ({
+        ...current,
+        [ticketId]: { status: updated.status, priority: updated.priority, reply: "" }
+      }));
+      if (reply && openSupportTicketId === ticketId) await loadSupportConversation(ticketId);
+      alert("Support ticket updated.");
+    } catch (err: any) {
+      console.error("Request failed");
+      alert(err.response?.data?.message || "Support ticket update failed.");
     } finally {
       setActionLoading(false);
     }
@@ -289,6 +425,10 @@ export function AdminPage() {
             <Megaphone className="w-4 h-4" /> Announcements
             {announcements.filter((announcement) => announcement.status === "PENDING").length > 0 && <Badge className="bg-red-200 text-red-800">{announcements.filter((announcement) => announcement.status === "PENDING").length}</Badge>}
           </button>
+          <button onClick={() => setActiveTab("support")} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${activeTab === "support" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"}`}>
+            <LifeBuoy className="w-4 h-4" /> Customer Support
+            {supportOpenCount > 0 && <Badge className="bg-red-200 text-red-800">{supportOpenCount}</Badge>}
+          </button>
           <button 
             onClick={() => setActiveTab("disputes")}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${
@@ -299,6 +439,12 @@ export function AdminPage() {
             {disputes.length > 0 && (
               <Badge className="bg-red-200 text-red-800 ml-1 font-bold">{disputes.length}</Badge>
             )}
+          </button>
+          <button onClick={() => setActiveTab("audit")} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${activeTab === "audit" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"}`}>
+            <ScrollText className="w-4 h-4" /> Audit Log
+          </button>
+          <button onClick={() => setActiveTab("system")} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all whitespace-nowrap ${activeTab === "system" ? "bg-primary text-white" : "hover:bg-gray-100 text-gray-600"}`}>
+            <Activity className="w-4 h-4" /> System Health
           </button>
         </div>
 
@@ -568,6 +714,131 @@ export function AdminPage() {
           <div className="space-y-6">
             <div><h2 className="text-xl font-bold text-gray-900">Announcement approval</h2><p className="text-sm text-muted-foreground">Keep the campus board useful and non-commercial.</p></div>
             <div className="grid md:grid-cols-2 gap-5">{announcements.map((announcement: any) => <Card key={announcement.id}><CardContent className="p-6"><div className="flex justify-between gap-3"><div><Badge variant="outline">{announcement.status}</Badge><h3 className="font-bold text-lg mt-2">{announcement.title}</h3></div><span className="text-xs text-muted-foreground">{announcement.author?.name}</span></div><p className="text-sm text-gray-600 mt-3 whitespace-pre-line">{announcement.body}</p>{announcement.status === "PENDING" && <div className="flex gap-2 mt-5 pt-4 border-t"><Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => moderateAnnouncement(announcement.id, "ACTIVE")}>Approve</Button><Button className="flex-1" variant="destructive" onClick={() => moderateAnnouncement(announcement.id, "REJECTED")}>Reject</Button></div>}</CardContent></Card>)}</div>
+          </div>
+        )}
+
+        {activeTab === "support" && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Customer support tickets</h2>
+              <p className="text-sm text-muted-foreground">Private conversations between users and the support team. Replies and administrative changes are recorded in the ticket history.</p>
+            </div>
+
+            <div className="bg-white border rounded-xl p-4 grid sm:grid-cols-3 gap-3 shadow-sm">
+              <div className="relative sm:col-span-1">
+                <Input value={supportSearch} onChange={(event) => { setSupportSearch(event.target.value); setSupportPage(1); }} placeholder="Search subject, user, or email…" className="pl-9" />
+                <Search className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+              </div>
+              <select value={supportStatusFilter} onChange={(event) => { setSupportStatusFilter(event.target.value as SupportTicketStatus | "ALL"); setSupportPage(1); }} className="h-10 px-3 bg-white border border-border rounded-lg text-sm">
+                <option value="ALL">All statuses</option>
+                <option value="OPEN">Open</option>
+                <option value="IN_PROGRESS">In progress</option>
+                <option value="WAITING_FOR_USER">Waiting for user</option>
+                <option value="RESOLVED">Resolved</option>
+                <option value="CLOSED">Closed</option>
+              </select>
+              <select value={supportPriorityFilter} onChange={(event) => { setSupportPriorityFilter(event.target.value as SupportTicketPriority | "ALL"); setSupportPage(1); }} className="h-10 px-3 bg-white border border-border rounded-lg text-sm">
+                <option value="ALL">All priorities</option>
+                <option value="LOW">Low priority</option>
+                <option value="NORMAL">Normal priority</option>
+                <option value="HIGH">High priority</option>
+                <option value="URGENT">Urgent</option>
+              </select>
+            </div>
+
+            {supportLoading ? <div className="bg-white border rounded-2xl py-14 flex justify-center"><Loader2 className="w-8 h-8 text-primary animate-spin" /></div> : supportTickets.length === 0 ? <div className="bg-white border rounded-2xl py-12 text-center text-muted-foreground">No support tickets match these filters.</div> : <div className="space-y-4">
+              {supportTickets.map((ticket) => {
+                const draft = supportDrafts[ticket.id] || { status: ticket.status, priority: ticket.priority, reply: "" };
+                const conversation = supportConversations[ticket.id];
+                const isOpen = openSupportTicketId === ticket.id;
+                return <Card key={ticket.id} className="bg-white border-border shadow-sm">
+                  <CardContent className="p-5 sm:p-6 space-y-4">
+                    <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap gap-2 mb-2"><Badge variant="outline">{ticket.status.replaceAll("_", " ")}</Badge><Badge variant="outline" className={ticket.priority === "URGENT" ? "bg-red-100 text-red-800" : ticket.priority === "HIGH" ? "bg-amber-100 text-amber-800" : "bg-gray-50"}>{ticket.priority}</Badge><Badge variant="outline" className="bg-gray-50">{ticket.category}</Badge></div>
+                        <h3 className="font-bold text-lg break-words">{ticket.subject}</h3>
+                        <p className="text-xs text-muted-foreground mt-1">#{ticket.id.slice(0, 8).toUpperCase()} · Opened {new Date(ticket.createdAt).toLocaleString()}</p>
+                        <p className="text-sm mt-2"><span className="font-semibold">{ticket.user?.name}</span> <span className="text-muted-foreground">({ticket.user?.email})</span></p>
+                      </div>
+                      {ticket.assignedAdmin && <p className="text-xs text-muted-foreground whitespace-nowrap">Assigned to {ticket.assignedAdmin.name}</p>}
+                    </div>
+
+                    <div className="bg-gray-50 rounded-xl border p-4"><p className="text-xs font-semibold text-muted-foreground mb-1">ORIGINAL REQUEST</p><p className="text-sm whitespace-pre-wrap break-words">{ticket.description}</p></div>
+
+                    <Button variant="outline" size="sm" onClick={() => toggleSupportConversation(ticket.id)} className="gap-2"><LifeBuoy className="w-4 h-4" />{isOpen ? "Hide conversation" : `View conversation (${ticket._count?.messages || 1})`}</Button>
+                    {isOpen && <div className="border rounded-xl p-4 bg-gray-50/50 space-y-3">
+                      {conversation?.loading && conversation.messages.length === 0 ? <div className="py-6 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div> : (conversation?.messages || []).map((message) => <div key={message.id} className={`flex ${message.isAdmin ? "justify-end" : "justify-start"}`}><div className={`max-w-[90%] rounded-2xl px-4 py-3 ${message.isAdmin ? "bg-primary text-white" : "bg-white border"}`}><p className="text-xs font-semibold opacity-70 mb-1">{message.isAdmin ? `${message.author?.name || "Former administrator"} · Support` : message.author?.name || "Former user"}</p><p className="text-sm whitespace-pre-wrap break-words">{message.body}</p><p className="text-[10px] opacity-60 mt-2">{new Date(message.createdAt).toLocaleString()}</p></div></div>)}
+                      {conversation?.error && <p className="text-sm text-red-700">{conversation.error}</p>}
+                      {conversation?.pagination && conversation.pagination.page < conversation.pagination.totalPages && <div className="text-center"><Button variant="outline" size="sm" disabled={conversation.loading} onClick={() => loadSupportConversation(ticket.id, conversation.pagination!.page + 1, true)}>{conversation.loading ? "Loading…" : "Load older messages"}</Button></div>}
+                    </div>}
+
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div><label className="text-xs font-semibold text-gray-700 block mb-1">Status</label><select value={draft.status} onChange={(event) => setSupportDrafts((current) => ({ ...current, [ticket.id]: { ...draft, status: event.target.value as SupportTicketStatus } }))} className="w-full h-10 px-3 bg-white border rounded-lg text-sm"><option value="OPEN">Open</option><option value="IN_PROGRESS">In progress</option><option value="WAITING_FOR_USER">Waiting for user</option><option value="RESOLVED">Resolved</option><option value="CLOSED">Closed</option></select></div>
+                      <div><label className="text-xs font-semibold text-gray-700 block mb-1">Priority</label><select value={draft.priority} onChange={(event) => setSupportDrafts((current) => ({ ...current, [ticket.id]: { ...draft, priority: event.target.value as SupportTicketPriority } }))} className="w-full h-10 px-3 bg-white border rounded-lg text-sm"><option value="LOW">Low</option><option value="NORMAL">Normal</option><option value="HIGH">High</option><option value="URGENT">Urgent</option></select></div>
+                    </div>
+                    <div><label className="text-xs font-semibold text-gray-700 block mb-1">Reply to user</label><Textarea rows={4} maxLength={5000} value={draft.reply} onChange={(event) => setSupportDrafts((current) => ({ ...current, [ticket.id]: { ...draft, reply: event.target.value } }))} placeholder="Write a clear response. Do not request passwords or payment details." /></div>
+                    <div className="flex justify-end"><Button disabled={actionLoading} onClick={() => updateSupportTicket(ticket.id)}>{actionLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Save update</Button></div>
+                  </CardContent>
+                </Card>;
+              })}
+            </div>}
+
+            {supportPagination.totalPages > 1 && <div className="flex justify-center items-center gap-3"><Button variant="outline" size="sm" disabled={supportPage <= 1 || supportLoading} onClick={() => setSupportPage((current) => Math.max(1, current - 1))}>Previous</Button><span className="text-sm text-muted-foreground">Page {supportPagination.page} of {supportPagination.totalPages} · {supportPagination.total} tickets</span><Button variant="outline" size="sm" disabled={supportPage >= supportPagination.totalPages || supportLoading} onClick={() => setSupportPage((current) => current + 1)}>Next</Button></div>}
+          </div>
+        )}
+
+        {activeTab === "audit" && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">Administrator Audit Log</h2>
+              <p className="mt-1 text-sm text-muted-foreground">Immutable moderation history with actor, request ID, reason, and safe before/after values.</p>
+            </div>
+            <form className="flex flex-col gap-3 rounded-xl border bg-white p-4 sm:flex-row" onSubmit={(event) => { event.preventDefault(); setAuditPage(1); setAuditFilter(auditSearch.trim()); }}>
+              <Input value={auditSearch} onChange={(event) => setAuditSearch(event.target.value)} placeholder="Filter by action, e.g. USER_BLOCK" className="max-w-md" />
+              <Button type="submit" variant="outline">Apply filter</Button>
+              {auditFilter && <Button type="button" variant="ghost" onClick={() => { setAuditSearch(""); setAuditFilter(""); setAuditPage(1); }}>Clear</Button>}
+            </form>
+            {auditLogs.length === 0 ? (
+              <div className="rounded-2xl border bg-white py-12 text-center text-muted-foreground">No audit events match this filter.</div>
+            ) : (
+              <div className="space-y-3">
+                {auditLogs.map((log) => (
+                  <Card key={log.id} className="bg-white">
+                    <CardContent className="p-5">
+                      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2"><Badge>{log.action}</Badge><Badge variant="outline">{log.entityType}</Badge></div>
+                          <p className="mt-2 text-sm font-semibold">{log.admin?.name || log.actorEmail || "Deleted administrator"}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(log.createdAt).toLocaleString()} · Entity {log.entityId}</p>
+                        </div>
+                        {log.requestId && <code className="break-all rounded bg-gray-100 px-2 py-1 text-[10px]">{log.requestId}</code>}
+                      </div>
+                      {log.reason && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900"><strong>Reason:</strong> {log.reason}</p>}
+                      {(log.before || log.after) && <details className="mt-3 text-xs"><summary className="cursor-pointer font-semibold text-muted-foreground">View safe change snapshot</summary><pre className="mt-2 overflow-x-auto rounded-lg bg-gray-950 p-3 text-gray-100">{JSON.stringify({ before: log.before, after: log.after }, null, 2)}</pre></details>}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+            {auditPagination.totalPages > 1 && <div className="flex items-center justify-center gap-3"><Button variant="outline" size="sm" disabled={auditPage <= 1} onClick={() => setAuditPage((page) => Math.max(1, page - 1))}>Previous</Button><span className="text-sm text-muted-foreground">Page {auditPagination.page} of {auditPagination.totalPages} · {auditPagination.total} events</span><Button variant="outline" size="sm" disabled={auditPage >= auditPagination.totalPages} onClick={() => setAuditPage((page) => page + 1)}>Next</Button></div>}
+          </div>
+        )}
+
+        {activeTab === "system" && (
+          <div className="space-y-6">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+              <div><h2 className="text-xl font-bold text-gray-900">System Health</h2><p className="mt-1 text-sm text-muted-foreground">Live process, database, request, memory, socket, and recent safe error signals.</p></div>
+              <Button variant="outline" className="gap-2" onClick={() => void fetchData("system")}><RefreshCw className="h-4 w-4" />Refresh</Button>
+            </div>
+            {!systemSnapshot ? <div className="rounded-2xl border bg-white py-12 text-center text-muted-foreground">System information is unavailable.</div> : <>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">READINESS</p><p className={`mt-2 text-2xl font-bold ${systemSnapshot.readiness?.ready ? "text-green-700" : "text-red-700"}`}>{systemSnapshot.readiness?.ready ? "Ready" : "Unavailable"}</p><p className="text-xs text-muted-foreground">Database: {systemSnapshot.readiness?.database}</p></CardContent></Card>
+                <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">REQUESTS</p><p className="mt-2 text-2xl font-bold">{systemSnapshot.monitoring?.requests?.total || 0}</p><p className="text-xs text-muted-foreground">Average {systemSnapshot.monitoring?.requests?.averageDurationMs || 0} ms</p></CardContent></Card>
+                <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">MEMORY</p><p className="mt-2 text-2xl font-bold">{systemSnapshot.monitoring?.memory?.rssMb || 0} MB</p><p className="text-xs text-muted-foreground">Heap {systemSnapshot.monitoring?.memory?.heapUsedMb || 0} MB</p></CardContent></Card>
+                <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">LIVE CHAT</p><p className="mt-2 text-2xl font-bold">{systemSnapshot.monitoring?.sockets?.activeConnections || 0}</p><p className="text-xs text-muted-foreground">{systemSnapshot.monitoring?.sockets?.messagesSent || 0} messages this process</p></CardContent></Card>
+              </div>
+              <Card><CardHeader><CardTitle className="text-lg">Recent safe errors</CardTitle></CardHeader><CardContent>{(systemSnapshot.monitoring?.recentErrors || []).length === 0 ? <p className="text-sm text-muted-foreground">No recent errors recorded by this process.</p> : <div className="space-y-2">{systemSnapshot.monitoring.recentErrors.map((error: any) => <div key={`${error.requestId}-${error.occurredAt}`} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{error.method} {error.path}</span><span className="text-xs text-muted-foreground">{new Date(error.occurredAt).toLocaleString()}</span></div><p className="mt-1 text-red-700">{error.message}</p><code className="mt-1 block break-all text-[10px] text-muted-foreground">{error.requestId}</code></div>)}</div>}</CardContent></Card>
+            </>}
           </div>
         )}
 

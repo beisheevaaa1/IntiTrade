@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 type RateLimitOptions = {
   windowMs: number;
   max: number;
+  maxBuckets?: number;
   key?: (req: Request) => string;
   message?: string;
 };
@@ -11,6 +12,7 @@ type Bucket = { count: number; resetAt: number };
 
 export function createRateLimit(options: RateLimitOptions) {
   const buckets = new Map<string, Bucket>();
+  const maxBuckets = options.maxBuckets ?? 10_000;
   let nextSweepAt = 0;
 
   return (req: Request, res: Response, next: NextFunction) => {
@@ -22,7 +24,10 @@ export function createRateLimit(options: RateLimitOptions) {
       nextSweepAt = now + options.windowMs;
     }
 
-    const key = options.key?.(req) || req.ip || req.socket.remoteAddress || "unknown";
+    const requestedKey = options.key?.(req) || req.ip || req.socket.remoteAddress || "unknown";
+    // Never let attacker-controlled identifiers grow the in-memory map without
+    // a bound. New excess keys share a deliberately strict overflow bucket.
+    const key = buckets.has(requestedKey) || buckets.size < maxBuckets ? requestedKey : "__overflow__";
     const current = buckets.get(key);
     const bucket = !current || current.resetAt <= now
       ? { count: 0, resetAt: now + options.windowMs }

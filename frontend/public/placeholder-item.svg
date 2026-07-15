@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-labelledby="title description">
+  <title id="title">Item image placeholder</title>
+  <desc id="description">A neutral illustration used when a listing has no image.</desc>
+  <rect width="800" height="600" fill="#f3f4f6"/>
+  <rect x="210" y="135" width="380" height="330" rx="28" fill="#ffffff" stroke="#d1d5db" stroke-width="12"/>
+  <circle cx="330" cy="245" r="42" fill="#fecaca"/>
+  <path d="M250 410l115-120 78 78 58-60 59 102H250z" fill="#e5e7eb"/>
+  <path d="M250 410l115-120 78 78" fill="none" stroke="#b91c1c" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

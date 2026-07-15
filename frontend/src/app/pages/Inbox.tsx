@@ -46,7 +46,7 @@ const THEME_OPTIONS = [
 
 export function Inbox() {
   const navigate = useNavigate();
-  const { user, token, reloadUser } = useAuth();
+  const { user, reloadUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -126,14 +126,14 @@ export function Inbox() {
         }
       }
     } catch (err) {
-      console.error("Error fetching conversations:", err);
+      console.error("Error fetching conversations:");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (localStorage.getItem("isLoggedIn") !== "true") {
+    if (!user) {
       navigate("/login");
       return;
     }
@@ -156,10 +156,10 @@ export function Inbox() {
 
   // Connect socket.io
   useEffect(() => {
-    if (!token) return;
+    if (!user) return;
 
     const socket = io(API_URL, {
-      auth: { token },
+      withCredentials: true,
       transports: ["websocket"]
     });
     socketRef.current = socket;
@@ -203,7 +203,7 @@ export function Inbox() {
     return () => {
       socket.disconnect();
     };
-  }, [token, activeConversation?.id, user?.id]);
+  }, [activeConversation?.id, user?.id]);
 
   // Join room when conversation is selected
   useEffect(() => {
@@ -301,7 +301,7 @@ export function Inbox() {
       }
       return true;
     } catch (err) {
-      console.error("Failed to send message:", err);
+      console.error("Failed to send message:");
       setSendError(err instanceof Error ? err.message : "Failed to send the message. Please try again.");
       return false;
     }
@@ -364,7 +364,7 @@ export function Inbox() {
       await api.post(`/community/blocks/${partnerId}`, { reason: reason.trim() });
       fetchConversations(activeConversation.id);
     } catch (err) {
-      console.error("Failed to block user:", err);
+      console.error("Failed to block user:");
       alert("Failed to block user.");
     }
   };
@@ -377,7 +377,7 @@ export function Inbox() {
       await api.delete(`/community/blocks/${partnerId}`);
       fetchConversations(activeConversation.id);
     } catch (err) {
-      console.error("Failed to unblock user:", err);
+      console.error("Failed to unblock user:");
       alert("Failed to unblock user.");
     }
   };
@@ -431,7 +431,7 @@ export function Inbox() {
       const res = await api.get("/listings", { params: { sellerId, status: "ACTIVE" } });
       setSellerListings(res.data.listings || []);
     } catch (err) {
-      console.error("Failed to fetch seller listings:", err);
+      console.error("Failed to fetch seller listings:");
     } finally {
       setListingsLoading(false);
     }
@@ -446,7 +446,7 @@ export function Inbox() {
       // Refresh list
       fetchConversations(res.data.conversation.id);
     } catch (err) {
-      console.error("Failed to update conversation listing context:", err);
+      console.error("Failed to update conversation listing context:");
       alert("Failed to change attached product.");
     }
   };
@@ -468,7 +468,7 @@ export function Inbox() {
       setShowSettingsModal(false);
       alert("Settings saved successfully!");
     } catch (err) {
-      console.error("Error saving settings:", err);
+      console.error("Error saving settings:");
       alert("Failed to save settings.");
     } finally {
       setSavingSettings(false);
@@ -661,7 +661,7 @@ export function Inbox() {
                 <img 
                   src={activeConversation.listing?.images?.[0]?.url 
                     ? mediaUrl(activeConversation.listing.images[0].url) 
-                    : "https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=100&q=80"} 
+                    : "/placeholder-item.svg"}
                   alt="Product" 
                   className="w-full h-full object-cover" 
                 />
@@ -1089,7 +1089,7 @@ export function Inbox() {
                     <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-border">
                       <div>
                         <label htmlFor="academic-status-toggle" className="font-bold text-sm text-gray-900 block">Show Academic Profile & Portfolio</label>
-                        <span className="text-[10px] text-muted-foreground">Share your GPA, verified grades, projects, and resume on your shop/courses listings.</span>
+                        <span className="text-[10px] text-muted-foreground">Share your self-authored academic background, projects, and resume on your shop or course listings.</span>
                       </div>
                       <input
                         id="academic-status-toggle"
@@ -1215,7 +1215,7 @@ export function Inbox() {
                   >
                     <div className="w-12 h-12 rounded overflow-hidden border bg-white shrink-0">
                       <img 
-                        src={item.images?.[0]?.url ? mediaUrl(item.images[0].url) : "https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=100&q=80"}
+                        src={item.images?.[0]?.url ? mediaUrl(item.images[0].url) : "/placeholder-item.svg"}
                         alt="Product"
                         className="w-full h-full object-cover"
                       />

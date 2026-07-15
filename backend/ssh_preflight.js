@@ -1,22 +1,13 @@
-import fs from 'node:fs';
 import { Client } from 'ssh2';
+import { clearSshPassword, createSshConfig } from './ssh_config.js';
 
-const privateKeyPath = process.env.SSH_PRIVATE_KEY_PATH;
-const config = {
-  host: process.env.SSH_HOST,
-  port: Number.parseInt(process.env.SSH_PORT || '22', 10),
-  username: process.env.SSH_USER,
-  ...(privateKeyPath ? { privateKey: fs.readFileSync(privateKeyPath) } : { password: process.env.SSH_PASSWORD })
-};
+const config = createSshConfig();
 const projectDir = process.env.SERVER_PROJECT_DIR || '/var/www/university-marketplace';
 
-if (!config.host || !config.username || (!privateKeyPath && !process.env.SSH_PASSWORD)) {
-  throw new Error('Set SSH_HOST, SSH_USER and either SSH_PRIVATE_KEY_PATH or SSH_PASSWORD');
-}
 if (!/^\/[A-Za-z0-9._/-]+$/.test(projectDir)) throw new Error('Invalid SERVER_PROJECT_DIR');
 
 const command = [
-  'set -o pipefail',
+  'set -e',
   'echo "== identity =="',
   'id',
   'echo "== project =="',
@@ -24,7 +15,8 @@ const command = [
   'echo "== runtime config (secrets redacted) =="',
   `cd ${projectDir}/backend && awk -F= '/^(NODE_ENV|HOST|PORT|CLIENT_URL|API_URL|EMAIL_VERIFICATION_REQUIRED)=/{print} /^(JWT_SECRET|DATABASE_URL)=/{print $1 "=<configured,length=" length($0)-length($1)-1 ">"}' .env`,
   'echo "== processes =="',
-  'pm2 list',
+  'systemctl status intitrade-api.service --no-pager --lines=20 2>/dev/null || true',
+  'pm2 list 2>/dev/null || true',
   'echo "== listeners =="',
   'ss -lntp',
   'echo "== firewall =="',
@@ -39,6 +31,7 @@ const command = [
 
 const connection = new Client();
 connection.on('ready', () => {
+  clearSshPassword(config);
   connection.exec(command, (error, stream) => {
     if (error) throw error;
     stream.on('close', (code) => {

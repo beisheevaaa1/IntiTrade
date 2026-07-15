@@ -101,12 +101,12 @@ export async function handleAutoReply(conversationId: string, senderId: string) 
           io.to(conversationId).emit("message:new", replyMsg);
         }
       } catch (err) {
-        console.error("Failed to execute auto-reply timeout:", err);
+        console.error(JSON.stringify({ level: "error", event: "auto_reply_timeout_failed", errorType: err instanceof Error ? err.name : "UnknownError" }));
       }
     }, delayMs);
 
     activeTimeouts.set(timeoutKey, timeout);
   } catch (err) {
-    console.error("Error setting up auto-reply:", err);
+    console.error(JSON.stringify({ level: "error", event: "auto_reply_setup_failed", errorType: err instanceof Error ? err.name : "UnknownError" }));
   }
 }

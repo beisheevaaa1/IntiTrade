@@ -1,12 +1,45 @@
 import type { Server } from "node:http";
 import { Server as SocketServer, type Socket } from "socket.io";
 import { z } from "zod";
-import { env } from "./env.js";
+import { allowedClientOrigins, env } from "./env.js";
 import { prisma } from "./prisma.js";
 import { verifyAccessToken } from "./utils/auth.js";
 import { handleAutoReply } from "./utils/autoReply.js";
+import { recordSocketConnection, recordSocketMessage } from "./monitoring.js";
+import { sessionTokenFromCookie } from "./utils/sessionCookie.js";
+import { isOwnedUploadUrl } from "./utils/uploadOwnership.js";
 
 let ioInstance: SocketServer | null = null;
+
+export function createSocketEventLimiter(maxBuckets = 10_000) {
+  const windows = new Map<string, { timestamps: number[]; windowMs: number }>();
+  let nextSweepAt = 0;
+  return (userId: string, event: string, max: number, windowMs: number) => {
+    const now = Date.now();
+    if (now >= nextSweepAt) {
+      for (const [key, bucket] of windows) {
+        const recent = bucket.timestamps.filter((timestamp) => now - timestamp < bucket.windowMs);
+        if (recent.length) windows.set(key, { ...bucket, timestamps: recent });
+        else windows.delete(key);
+      }
+      nextSweepAt = now + windowMs;
+    }
+    const requestedKey = `${event}:${userId}`;
+    const key = windows.has(requestedKey) || windows.size < maxBuckets ? requestedKey : `${event}:__overflow__`;
+    const recent = (windows.get(key)?.timestamps ?? []).filter((timestamp) => now - timestamp < windowMs);
+    if (recent.length >= max) return false;
+    recent.push(now);
+    windows.set(key, { timestamps: recent, windowMs });
+    return true;
+  };
+}
+
+const allowUserEvent = createSocketEventLimiter();
+
+export function isAllowedSocketOrigin(origin?: string) {
+  if (!origin) return env.NODE_ENV !== "production";
+  return allowedClientOrigins.includes(origin);
+}
 
 const conversationIdSchema = z.string().uuid();
 const attachmentSchema = z.string()
@@ -34,13 +67,16 @@ async function socketAccountIsActive(socket: Socket) {
 
 export function attachSocket(server: Server) {
   const io = new SocketServer(server, {
-    cors: { origin: env.CLIENT_URL, credentials: true },
+    cors: { origin: allowedClientOrigins, credentials: true },
+    allowRequest: (request, callback) => callback(null, isAllowedSocketOrigin(request.headers.origin)),
     maxHttpBufferSize: 20_000
   });
   ioInstance = io;
 
   io.use(async (socket, next) => {
-    const token = socket.handshake.auth.token;
+    const token = typeof socket.handshake.auth.token === "string"
+      ? socket.handshake.auth.token
+      : sessionTokenFromCookie(socket.request.headers.cookie);
     if (!token || typeof token !== "string") return next(new Error("Authentication required"));
     try {
       const payload = verifyAccessToken(token);
@@ -57,15 +93,8 @@ export function attachSocket(server: Server) {
   });
 
   io.on("connection", (socket) => {
-    const eventWindows = new Map<string, number[]>();
-    const allowEvent = (key: string, max: number, windowMs: number) => {
-      const now = Date.now();
-      const recent = (eventWindows.get(key) ?? []).filter((timestamp) => now - timestamp < windowMs);
-      if (recent.length >= max) return false;
-      recent.push(now);
-      eventWindows.set(key, recent);
-      return true;
-    };
+    recordSocketConnection(1);
+    socket.once("disconnect", () => recordSocketConnection(-1));
 
     socket.join(`user:${socket.data.user.id}`);
 
@@ -88,18 +117,21 @@ export function attachSocket(server: Server) {
         socket.to(conversation.id).emit("messages:read", { conversationId: conversation.id, readAt });
         callback?.({ ok: true });
       } catch (error) {
-        console.error("Socket conversation join failed:", error);
+        console.error(JSON.stringify({ level: "error", event: "socket_join_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
         callback?.({ ok: false, message: "Could not open the conversation" });
       }
     });
 
     socket.on("message:send", async (input: unknown, callback?: Ack) => {
       try {
-        if (!allowEvent("message:send", 12, 10_000)) return callback?.({ ok: false, message: "You are sending messages too quickly" });
+        const userId = socket.data.user.id as string;
+        if (!allowUserEvent(userId, "message:send", 12, 10_000)) return callback?.({ ok: false, message: "You are sending messages too quickly" });
         const parsed = messageSchema.safeParse(input);
         if (!parsed.success || !await socketAccountIsActive(socket)) return callback?.({ ok: false, message: "Message rejected" });
 
-        const userId = socket.data.user.id as string;
+        if (parsed.data.attachmentUrl && !isOwnedUploadUrl(userId, parsed.data.attachmentUrl)) {
+          return callback?.({ ok: false, message: "Attachment rejected" });
+        }
         const conversation = await prisma.conversation.findFirst({
           where: { id: parsed.data.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] }
         });
@@ -141,19 +173,21 @@ export function attachSocket(server: Server) {
         io.to(conversation.id).emit("message:new", message);
         io.to(`user:${otherUserId}`).emit("conversation:updated", { conversationId: conversation.id, message });
         callback?.({ ok: true, message });
+        recordSocketMessage(true);
         void handleAutoReply(conversation.id, userId);
       } catch (error) {
-        console.error("Socket message send failed:", error);
+        console.error(JSON.stringify({ level: "error", event: "socket_message_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
+        recordSocketMessage(false);
         callback?.({ ok: false, message: "Could not send the message" });
       }
     });
 
     const handleTyping = async (input: unknown, isTyping: boolean) => {
       try {
-        if (!allowEvent("typing", 10, 5_000)) return;
+        const userId = socket.data.user.id as string;
+        if (!allowUserEvent(userId, "typing", 10, 5_000)) return;
         const parsed = typingSchema.safeParse(input);
         if (!parsed.success) return;
-        const userId = socket.data.user.id as string;
         const conversation = await prisma.conversation.findFirst({
           where: { id: parsed.data.conversationId, OR: [{ buyerId: userId }, { sellerId: userId }] },
           select: { id: true }
@@ -161,7 +195,7 @@ export function attachSocket(server: Server) {
         if (!conversation) return;
         socket.to(conversation.id).emit("typing:status", { conversationId: conversation.id, userId, isTyping });
       } catch (error) {
-        console.error("Socket typing event failed:", error);
+        console.error(JSON.stringify({ level: "error", event: "socket_typing_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
       }
     };
 

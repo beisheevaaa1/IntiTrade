@@ -7,6 +7,14 @@ IntiTrade (1).zip
 # Зависимости и сборка в подпроектах
 **/node_modules/
 **/dist/
+frontend/.releases/
+frontend/current
+frontend/.pending-release
+frontend/.previous-release
+backend/.runtime-releases/
+backend/runtime-current
+backend/.pending-runtime-release
+backend/.previous-runtime-release
 **/*.tsbuildinfo
 **/.env
 **/.env.*
@@ -15,3 +23,17 @@ IntiTrade (1).zip
 **/*.log
 **/.DS_Store
 **/.vite/
+
+# Private credentials and key material
+**/id_rsa
+**/id_dsa
+**/id_ecdsa
+**/id_ed25519
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.ppk
+**/credentials.json
+!**/*.pem.example
+!**/*.key.example
