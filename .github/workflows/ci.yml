@@ -87,6 +87,9 @@ jobs:
           const rendered = Function('remoteProjectDir', 'apiPort', `return (${source.slice(start + marker.length, end)})`)('/var/www/university-marketplace', 4099);
           const validation = rendered.split('\n').find((line) => line.includes('dist/env.js'));
           assert.equal(validation, 'runuser -u intitrade -- env HOME=/var/lib/intitrade bash -c \'cd "$1" && exec "$2" --input-type=module --eval "$3"\' -- "$RELEASE" "$NODE_BIN" \'await import("./dist/env.js")\'');
+          assert.match(rendered, /verify_health_json "\$health" "\$EXPECTED_VERSION"/);
+          assert.match(rendered, /verify_health_json "\$public_health" "\$EXPECTED_VERSION"/);
+          assert.doesNotMatch(rendered, /grep -Fq ""ready"/);
           process.stdout.write(rendered);
           EOF
       - name: Install frontend dependencies

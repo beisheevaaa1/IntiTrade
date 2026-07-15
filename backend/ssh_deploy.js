@@ -71,6 +71,9 @@ conn.on('ready', () => {
     '}',
     'trap rollback_and_cleanup EXIT',
     "trap 'exit 130' HUP INT TERM",
+    'verify_health_json() {',
+    '  HEALTH_JSON="$1" EXPECTED_VERSION="$2" "$NODE_BIN" --eval \'try { const value = JSON.parse(process.env.HEALTH_JSON); process.exit(value.ready === true && value.version === process.env.EXPECTED_VERSION ? 0 : 1); } catch { process.exit(1); }\'',
+    '}',
 
     'echo "[1/12] Verifying and updating the Git worktree"',
     'cd "$PROJECT_DIR"',
@@ -126,7 +129,7 @@ conn.on('ready', () => {
     'ready=0',
     'for attempt in $(seq 1 30); do',
     '  health="$(curl --fail --silent --show-error --connect-timeout 2 --max-time 5 "http://127.0.0.1:$API_PORT/api/health/ready" 2>/dev/null || true)"',
-    '  if systemctl is-active --quiet intitrade-api.service && printf "%s" "$health" | grep -Fq "\"ready\":true" && printf "%s" "$health" | grep -Fq "\"version\":\"$EXPECTED_VERSION\""; then ready=1; break; fi',
+    '  if systemctl is-active --quiet intitrade-api.service && verify_health_json "$health" "$EXPECTED_VERSION"; then ready=1; break; fi',
     '  sleep 1',
     'done',
     'if [ "$ready" -ne 1 ]; then echo "The new API release did not become ready" >&2; exit 1; fi',
@@ -145,8 +148,7 @@ conn.on('ready', () => {
     'test "$expected" = "$primary"',
     'test "$expected" = "$alternate"',
     'public_health="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 https://intitrade.shop/api/health/ready)"',
-    'printf "%s" "$public_health" | grep -Fq "\"ready\":true"',
-    'printf "%s" "$public_health" | grep -Fq "\"version\":\"$EXPECTED_VERSION\""',
+    'verify_health_json "$public_health" "$EXPECTED_VERSION"',
     'systemctl is-active --quiet intitrade-api.service',
 
     'echo "[12/12] Recording deployment and retiring an empty root PM2 runtime"',
