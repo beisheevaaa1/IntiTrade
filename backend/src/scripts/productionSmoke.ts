@@ -1009,6 +1009,7 @@ async function runSmoke(abortSignal: AbortSignal, { expectedVersion, uploadsDir 
     tracked.transactionIds.add(disputedTransactionId);
     await sellerClient.request(`/api/listings/${listingId}/status`, {
       method: "PATCH",
+      expected: 409,
       body: { status: "ARCHIVED" }
     });
     const disputeResult = await buyerClient.request(`/api/transactions/${disputedTransactionId}/status`, {

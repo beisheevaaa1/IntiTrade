@@ -49,6 +49,10 @@ describe("production smoke safety invariants", () => {
     expect(source).toContain("TransactionStatus.CANCELLED");
   });
 
+  it("treats closing a listing with an active hold as a protected conflict", () => {
+    expect(source).toMatch(/expected: 409,\s+body: \{ status: "ARCHIVED" \}/);
+  });
+
   it("verifies every relationship table after cleanup", () => {
     for (const model of [
       "emailVerificationToken.count",
