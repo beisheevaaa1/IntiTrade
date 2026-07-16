@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ListingType, Prisma, TransactionStatus } from "@prisma/client";
 import {
+  isListingInventoryDatabaseConflict,
   listingInventoryConflict,
   settleProductInventory,
   transactionListingType
@@ -29,6 +30,17 @@ function transactionClient(holds: Array<{
 }
 
 describe("transaction inventory snapshots", () => {
+  it("normalizes PostgreSQL inventory trigger violations without masking unrelated failures", () => {
+    const triggerFailure = new Prisma.PrismaClientUnknownRequestError(
+      'QueryError(PostgresError { code: "23514", message: "Active reservations prevent closing the listing" })',
+      { clientVersion: "test" }
+    );
+    const unrelatedFailure = new Prisma.PrismaClientUnknownRequestError("connection reset", { clientVersion: "test" });
+
+    expect(isListingInventoryDatabaseConflict(triggerFailure)).toBe(true);
+    expect(isListingInventoryDatabaseConflict(unrelatedFailure)).toBe(false);
+  });
+
   it("uses a valid captured snapshot or the guarded legacy cutover snapshot", () => {
     expect(transactionListingType(snapshot(ListingType.PRODUCT), listingId)).toBe(ListingType.PRODUCT);
     expect(transactionListingType(null, listingId)).toBeNull();

@@ -12,7 +12,8 @@ import {
   listingInventoryConflict,
   lockListingInventory,
   settleProductInventory,
-  transactionListingType
+  transactionListingType,
+  isListingInventoryDatabaseConflict
 } from "../utils/listingInventory.js";
 import { lockMessageAccounts } from "../utils/messageLocks.js";
 
@@ -23,10 +24,6 @@ class AdminMutationError extends Error {
   constructor(public status: number, message: string) {
     super(message);
   }
-}
-
-function isAdminInventoryDatabaseConflict(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2004";
 }
 
 const historicalListingSelect = {
@@ -134,7 +131,7 @@ router.patch("/listings/:id/status", async (req, res) => {
       return { outcome: "UPDATED" as const, listing: updated };
     });
   } catch (error) {
-    if (isAdminInventoryDatabaseConflict(error)) {
+    if (isListingInventoryDatabaseConflict(error)) {
       return res.status(409).json({ message: "Listing inventory changed while this request was being processed" });
     }
     throw error;
@@ -430,7 +427,7 @@ router.patch("/disputes/:id/resolve", async (req, res) => {
     });
   } catch (error) {
     if (error instanceof AdminMutationError) return res.status(error.status).json({ message: error.message });
-    if (isAdminInventoryDatabaseConflict(error)) {
+    if (isListingInventoryDatabaseConflict(error)) {
       return res.status(409).json({ message: "Listing inventory changed while this dispute was being resolved" });
     }
     throw error;

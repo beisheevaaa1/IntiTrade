@@ -14,6 +14,13 @@ export type ListingInventoryConflict = {
   heldQuantity: number;
 };
 
+/** Maps the PostgreSQL inventory trigger/check violation to a safe API conflict. */
+export function isListingInventoryDatabaseConflict(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) return error.code === "P2004";
+  return error instanceof Prisma.PrismaClientUnknownRequestError
+    && /PostgresError\s*\{\s*code:\s*"23514"|SQLSTATE\s*23514/i.test(error.message);
+}
+
 function snapshotListingType(snapshot: Prisma.JsonValue | null, listingId: string) {
   if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
   if (

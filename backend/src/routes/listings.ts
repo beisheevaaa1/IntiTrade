@@ -5,7 +5,7 @@ import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
 import { canAttachMediaUrl } from "../utils/uploadOwnership.js";
 import { listingMediaValidationMessage } from "../utils/validation.js";
-import { listingInventoryConflict, lockListingInventory } from "../utils/listingInventory.js";
+import { isListingInventoryDatabaseConflict, listingInventoryConflict, lockListingInventory } from "../utils/listingInventory.js";
 
 const router = Router();
 
@@ -203,10 +203,6 @@ async function listingReferenceValidationMessage(categoryId?: string, meetupPoin
 
 function isListingReferenceConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003";
-}
-
-function isListingInventoryDatabaseConflict(error: unknown) {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2004";
 }
 
 class ListingMutationError extends Error {
