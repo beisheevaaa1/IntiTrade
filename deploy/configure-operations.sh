@@ -71,18 +71,52 @@ if [[ "${PROJECT_PERMISSIONS_PREPARED}" != "1" ]]; then
   chmod 0755 "${PROJECT_DIR}" "${PROJECT_DIR}/backend" "${PROJECT_DIR}/frontend" "${PROJECT_DIR}/deploy"
 fi
 
-mkdir -p /var/log/intitrade /var/backups/intitrade "${PROJECT_DIR}/backend/uploads"
+mkdir -p /var/log/intitrade /var/backups/intitrade /var/lib/intitrade-deploy "${PROJECT_DIR}/backend/uploads"
 mkdir -p /var/lib/intitrade-build
 chown "${APP_USER}:${APP_GROUP}" /var/log/intitrade /var/lib/intitrade
 chown -R "${APP_USER}:${APP_GROUP}" "${PROJECT_DIR}/backend/uploads"
 chmod 750 /var/log/intitrade /var/backups/intitrade /var/lib/intitrade "${PROJECT_DIR}/backend/uploads"
+chown root:root /var/lib/intitrade-deploy
+chmod 0755 /var/lib/intitrade-deploy
 chown "${BUILD_USER}:${BUILD_USER}" /var/lib/intitrade-build
 chmod 755 /var/lib/intitrade-build
 chown "root:${APP_GROUP}" "${PROJECT_DIR}/backend/.env"
 chmod 640 "${PROJECT_DIR}/backend/.env"
 
+cat > /etc/systemd/system/intitrade-maintenance.service <<EOF
+[Unit]
+Description=IntiTrade explicit deployment maintenance responder
+After=network.target
+Conflicts=intitrade-api.service
+
+[Service]
+Type=simple
+User=${APP_USER}
+Group=${APP_GROUP}
+Environment=NODE_ENV=production
+Environment=SERVER_API_PORT=${API_PORT}
+WorkingDirectory=${PROJECT_DIR}/deploy
+ExecStart=${NODE_BIN} ${PROJECT_DIR}/deploy/maintenance-api.cjs
+Restart=always
+RestartSec=2
+TimeoutStopSec=15
+KillSignal=SIGTERM
+MemoryMax=64M
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+
 if [[ "${OPERATIONS_MODE}" == "prepare" ]]; then
-  echo "IntiTrade users, directories, and project permissions prepared"
+  echo "IntiTrade users, directories, maintenance responder, and project permissions prepared"
   exit 0
 fi
 
@@ -139,6 +173,7 @@ Environment=NODE_ENV=production
 Environment=PROJECT_DIR=${PROJECT_DIR}
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WorkingDirectory=${PROJECT_DIR}/backend/runtime-current
+ExecStartPre=/bin/bash ${PROJECT_DIR}/deploy/verify-runtime-schema-compatibility.sh
 ExecStart=${NODE_BIN} ${PROJECT_DIR}/backend/runtime-current/dist/index.js
 Restart=always
 RestartSec=5
@@ -172,6 +207,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 23 * * * * root find ${PROJECT_DIR}/backend/uploads -maxdepth 1 -type f -name '*.upload' -mmin +60 -delete
 41 * * * * root flock -n /run/lock/intitrade-backup.lock runuser -u ${APP_USER} -- bash -c 'cd ${PROJECT_DIR}/backend/runtime-current && { test ! -f dist/scripts/cleanupUploads.js || node dist/scripts/cleanupUploads.js; }' >>/var/log/intitrade/upload-cleanup.log 2>&1
 EOF
+rm -f /var/lib/intitrade-deploy/intitrade-upload-cleanup.paused
 
 chmod 644 /etc/logrotate.d/intitrade /etc/cron.d/intitrade-backup /etc/cron.d/intitrade-health /etc/cron.d/intitrade-upload-cleanup
 echo "IntiTrade service isolation, log rotation, daily backup, and local readiness monitor configured"

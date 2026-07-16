@@ -101,16 +101,29 @@ node backend/ssh_preflight.js
 node backend/ssh_deploy.js
 ```
 
-Деплой закрепляет проверенные SSH fingerprints, собирает код от изолированного build-пользователя без доступа к production-БД, выполняет тесты, делает проверенный backup, применяет миграции и атомарно переключает backend/frontend releases. При ошибке readiness, Nginx или внешнего smoke-check автоматически возвращаются предыдущие релизы.
+Деплой закрепляет проверенные SSH fingerprints, собирает код от изолированного build-пользователя без доступа к production-БД, выполняет тесты, запускает опциональный read-only hook `backend/prisma/predeploy-data-checks.sql`, делает проверенный backup, применяет миграции и атомарно переключает backend/frontend releases. Predeploy hook обязан только читать данные и завершаться ошибкой при нарушении prerequisites; runner дополнительно оборачивает его в PostgreSQL `TRANSACTION READ ONLY`. Проверка выполняется до backup, повторяется сразу после него и ещё раз после остановки writes. Поэтому обычный отказ оставляет старый API и схему без изменений, а две повторные проверки закрывают race с действиями пользователей. Backend-релиз содержит неизменяемый `.schema-compatibility`, а состояние production-схемы и незавершённого перехода хранится отдельно от рабочей копии в `/var/lib/intitrade-deploy`.
 
-Ручной rollback на сервере:
+Rollback выбирается по совместимости, а не только по HTTP health-check:
+
+- до начала миграций старый backend остаётся без изменений;
+- после совместимой миграции можно вернуть только релиз с тем же schema marker;
+- после завершённой несовместимой миграции деплой делает roll-forward на новый проверенный backend, даже если frontend/Nginx-проверка не прошла;
+- перед несовместимой миграцией API переходит в явный persistent maintenance mode и отвечает `503` с `DEPLOYMENT_MAINTENANCE`; старый upload-cleanup cron останавливается под тем же lock, который использует media cleanup;
+- после завершённой миграции запускается только совместимый новый backend, а если переход прервался, maintenance сохраняется после выхода deploy-процесса и перезагрузки сервера. Старый backend не может раскрыть черновики или удалить snapshot media.
+
+`deploy/backend-schema-compatibility` консервативно привязан к имени последней Prisma migration и меняется при каждой новой миграции; CI проверяет это правило. Поэтому совместимость никогда не предполагается автоматически, даже для миграции, которая выглядит additive. Нельзя присваивать старому релизу новый marker вручную.
+
+Состояние безопасного восстановления на сервере:
 
 ```bash
-PROJECT_DIR=/var/www/university-marketplace BACKEND_RELEASE_MODE=rollback bash deploy/build-backend-release.sh
-PROJECT_DIR=/var/www/university-marketplace FRONTEND_RELEASE_MODE=rollback bash deploy/build-frontend-release.sh
-systemctl restart intitrade-api.service
-systemctl reload nginx
+cat /var/lib/intitrade-deploy/schema-compatibility
+cat /var/lib/intitrade-deploy/schema-compatibility.pending 2>/dev/null || true
+cat /var/lib/intitrade-deploy/maintenance.json 2>/dev/null || true
+cat /var/www/university-marketplace/backend/runtime-current/.schema-compatibility 2>/dev/null || echo legacy
+systemctl status intitrade-api.service intitrade-maintenance.service --no-pager
 ```
+
+Для выхода из maintenance повторно запустите обычный deploy релиза с marker, указанным в `schema-compatibility.pending`. Скрипт повторно и идемпотентно проверит миграции, запустит совместимый backend и только после readiness уберёт maintenance marker. `build-backend-release.sh` требует `BACKEND_REQUIRED_SCHEMA_COMPATIBILITY` для activation/rollback и откажется переключать несовместимый runtime; `ExecStartPre` в systemd независимо повторяет проверку marker и блокирует запуск при pending migration. Raw-переключение symlink запрещено. Frontend rollback не меняет это правило.
 
 ## Backup
 

@@ -11,6 +11,25 @@ PENDING_FILE="${BACKEND_DIR}/.pending-runtime-release"
 PREVIOUS_FILE="${BACKEND_DIR}/.previous-runtime-release"
 KEEP_RELEASES="${KEEP_BACKEND_RELEASES:-3}"
 MODE="${BACKEND_RELEASE_MODE:-stage}"
+SCHEMA_COMPATIBILITY_SOURCE="${BACKEND_SCHEMA_COMPATIBILITY_FILE:-}"
+
+validate_compatibility() {
+  local compatibility="$1"
+  [[ "${compatibility}" =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]]
+}
+
+release_compatibility() {
+  local release_dir="$1"
+  local compatibility="legacy"
+  if [[ -s "${release_dir}/.schema-compatibility" ]]; then
+    compatibility="$(<"${release_dir}/.schema-compatibility")"
+    validate_compatibility "${compatibility}" || {
+      echo "Invalid schema compatibility marker in ${release_dir}" >&2
+      return 1
+    }
+  fi
+  printf '%s\n' "${compatibility}"
+}
 
 validate_release() {
   local release_dir="$1"
@@ -42,6 +61,7 @@ copy_runtime() {
   local release_dir="$1"
   local source_dir="${2:-${BACKEND_DIR}}"
   local version="${3:-${BACKEND_RELEASE_VERSION:-$(git -C "${PROJECT_DIR}" rev-parse --short=12 HEAD)}}"
+  local schema_compatibility_source="${4:-}"
   [[ "${version}" =~ ^[0-9a-f]{7,40}$ ]] || { echo "Invalid backend release version" >&2; exit 1; }
   mkdir -p "${release_dir}"
   cp -a "${source_dir}/dist" "${release_dir}/dist"
@@ -50,6 +70,12 @@ copy_runtime() {
   cp -a --reflink=auto "${source_dir}/node_modules" "${release_dir}/node_modules"
   cp "${source_dir}/package.json" "${source_dir}/package-lock.json" "${release_dir}/"
   printf '%s\n' "${version}" > "${release_dir}/.app-version"
+  if [[ -n "${schema_compatibility_source}" ]]; then
+    [[ -s "${schema_compatibility_source}" ]] || { echo "Schema compatibility marker was not found" >&2; exit 1; }
+    compatibility="$(<"${schema_compatibility_source}")"
+    validate_compatibility "${compatibility}" || { echo "Invalid schema compatibility marker" >&2; exit 1; }
+    printf '%s\n' "${compatibility}" > "${release_dir}/.schema-compatibility"
+  fi
   link_runtime_data "${release_dir}"
   chown -R root:root "${release_dir}"
   # The runtime stays root-owned and immutable, but the unprivileged API
@@ -87,6 +113,13 @@ fi
 if [[ "${MODE}" == "activate" ]]; then
   [[ -s "${PENDING_FILE}" ]] || { echo "No staged backend release" >&2; exit 1; }
   release_dir="$(<"${PENDING_FILE}")"
+  required_compatibility="${BACKEND_REQUIRED_SCHEMA_COMPATIBILITY:-}"
+  validate_compatibility "${required_compatibility}" || { echo "A valid BACKEND_REQUIRED_SCHEMA_COMPATIBILITY is required for activation" >&2; exit 1; }
+  release_schema_compatibility="$(release_compatibility "${release_dir}")"
+  [[ "${release_schema_compatibility}" == "${required_compatibility}" ]] || {
+    echo "Refusing incompatible backend activation: release=${release_schema_compatibility}, database=${required_compatibility}" >&2
+    exit 1
+  }
   previous="$(readlink -f "${CURRENT_LINK}" 2>/dev/null || true)"
   validate_release "${previous}" || { echo "No valid current backend release is available for rollback" >&2; exit 1; }
   printf '%s\n' "${previous}" > "${PREVIOUS_FILE}"
@@ -97,10 +130,36 @@ if [[ "${MODE}" == "activate" ]]; then
 fi
 
 if [[ "${MODE}" == "rollback" ]]; then
-  [[ -s "${PREVIOUS_FILE}" ]] || { echo "No previous backend release is available" >&2; exit 1; }
-  previous="$(<"${PREVIOUS_FILE}")"
+  if [[ -n "${BACKEND_ROLLBACK_TARGET:-}" ]]; then
+    previous="${BACKEND_ROLLBACK_TARGET}"
+  else
+    [[ -s "${PREVIOUS_FILE}" ]] || { echo "No previous backend release is available" >&2; exit 1; }
+    previous="$(<"${PREVIOUS_FILE}")"
+  fi
+  required_compatibility="${BACKEND_REQUIRED_SCHEMA_COMPATIBILITY:-}"
+  validate_compatibility "${required_compatibility}" || { echo "A valid BACKEND_REQUIRED_SCHEMA_COMPATIBILITY is required for rollback" >&2; exit 1; }
+  previous_compatibility="$(release_compatibility "${previous}")"
+  [[ "${previous_compatibility}" == "${required_compatibility}" ]] || {
+    echo "Refusing incompatible backend rollback: release=${previous_compatibility}, database=${required_compatibility}" >&2
+    exit 1
+  }
   switch_current "${previous}"
   echo "Backend rolled back to: ${previous}"
+  exit 0
+fi
+
+if [[ "${MODE}" == "roll-forward" ]]; then
+  recovery_target="${BACKEND_ROLLFORWARD_TARGET:-}"
+  required_compatibility="${BACKEND_REQUIRED_SCHEMA_COMPATIBILITY:-}"
+  validate_release "${recovery_target}" || { echo "Invalid backend roll-forward target" >&2; exit 1; }
+  validate_compatibility "${required_compatibility}" || { echo "A valid BACKEND_REQUIRED_SCHEMA_COMPATIBILITY is required for roll-forward" >&2; exit 1; }
+  recovery_compatibility="$(release_compatibility "${recovery_target}")"
+  [[ "${recovery_compatibility}" == "${required_compatibility}" ]] || {
+    echo "Refusing incompatible backend roll-forward: release=${recovery_compatibility}, database=${required_compatibility}" >&2
+    exit 1
+  }
+  switch_current "${recovery_target}"
+  echo "Backend rolled forward to: ${recovery_target}"
   exit 0
 fi
 
@@ -111,11 +170,13 @@ fi
 
 [[ -s "${BACKEND_BUILD_DIR}/dist/index.js" && -d "${BACKEND_BUILD_DIR}/node_modules" ]] \
   || { echo "Build the backend before staging a runtime release" >&2; exit 1; }
+[[ -s "${SCHEMA_COMPATIBILITY_SOURCE}" ]] \
+  || { echo "BACKEND_SCHEMA_COMPATIBILITY_FILE is required when staging a release" >&2; exit 1; }
 
 GIT_SHA="$(git -C "${PROJECT_DIR}" rev-parse --short=12 HEAD)"
 RELEASE_DIR="${RELEASES_DIR}/${GIT_SHA}-$(date -u +%Y%m%dT%H%M%SZ)"
 rm -rf "${RELEASE_DIR}"
-copy_runtime "${RELEASE_DIR}" "${BACKEND_BUILD_DIR}"
+copy_runtime "${RELEASE_DIR}" "${BACKEND_BUILD_DIR}" "${GIT_SHA}" "${SCHEMA_COMPATIBILITY_SOURCE}"
 printf '%s\n' "${RELEASE_DIR}" > "${PENDING_FILE}"
 echo "Backend release staged: ${RELEASE_DIR}"
 

@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import { env } from "../env.js";
 import { prisma } from "../prisma.js";
+import { snapshotMediaReferences } from "../utils/snapshotMedia.js";
 
 const uploadDir = path.resolve(process.cwd(), "uploads");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -75,16 +76,36 @@ async function removeFile(filePath?: string) {
   await fs.promises.unlink(filePath).catch(() => undefined);
 }
 
+export function chargeableUserUploadBytes(
+  ownedFiles: Array<{ name: string; size: number }>,
+  retainedEvidence: ReadonlySet<string>
+) {
+  return ownedFiles.reduce(
+    (total, file) => total + (retainedEvidence.has(`/uploads/${file.name}`) ? 0 : file.size),
+    0
+  );
+}
+
 async function uploadUsage(userId: string) {
   let totalBytes = 0;
   let userBytes = 0;
   const entries = await fs.promises.readdir(uploadDir, { withFileTypes: true });
+  const ownedFiles: Array<{ name: string; size: number }> = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     const stat = await fs.promises.stat(path.join(uploadDir, entry.name));
     totalBytes += stat.size;
-    if (entry.name.startsWith(`${userId}-`)) userBytes += stat.size;
+    if (entry.name.startsWith(`${userId}-`)) ownedFiles.push({ name: entry.name, size: stat.size });
   }
+
+  // Immutable evidence remains protected by the installation-wide storage
+  // ceiling, but must not permanently consume a seller's personal working
+  // quota after they replace the media on their live listing.
+  const retainedEvidence = await snapshotMediaReferences(
+    prisma,
+    ownedFiles.map((file) => `/uploads/${file.name}`)
+  );
+  userBytes = chargeableUserUploadBytes(ownedFiles, retainedEvidence);
   return { totalBytes, userBytes };
 }
 
@@ -170,7 +191,7 @@ router.delete("/:filename", requireAuth, uploadRateLimit, async (req, res) => {
     return res.status(403).json({ message: "You can only delete media uploaded by your account" });
   }
   const url = `/uploads/${filename}`;
-  const [listingReference, messageReference, announcementReference, avatarReference] = await Promise.all([
+  const [listingReference, messageReference, announcementReference, avatarReference, snapshotReferences] = await Promise.all([
     prisma.listingImage.findFirst({ where: { url }, select: { id: true } }),
     prisma.message.findFirst({ where: { attachmentUrl: url }, select: { id: true } }),
     prisma.announcement.findFirst({
@@ -181,9 +202,10 @@ router.delete("/:filename", requireAuth, uploadRateLimit, async (req, res) => {
       },
       select: { id: true }
     }),
-    prisma.user.findFirst({ where: { avatarUrl: url }, select: { id: true } })
+    prisma.user.findFirst({ where: { avatarUrl: url }, select: { id: true } }),
+    snapshotMediaReferences(prisma, [url])
   ]);
-  if (listingReference || messageReference || announcementReference || avatarReference) {
+  if (listingReference || messageReference || announcementReference || avatarReference || snapshotReferences.has(url)) {
     return res.status(409).json({ message: "This media is attached to published content and cannot be deleted" });
   }
   await removeFile(path.join(uploadDir, filename));

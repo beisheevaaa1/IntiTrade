@@ -1,8 +1,71 @@
 import { prisma } from "../prisma.js";
 import { getIo } from "../socket.js";
+import { lockConversationMessages, lockMessageParticipants } from "./messageLocks.js";
 
 // Keep track of active auto-reply timeouts to avoid duplicating if multiple messages arrive within the delay period
 const activeTimeouts = new Map<string, NodeJS.Timeout>();
+
+export async function sendQueuedAutoReply(conversationId: string, senderId: string, recipientId: string) {
+  return prisma.$transaction(async (tx) => {
+    // Manual sends and user blocks take these same locks. Once acquired, the
+    // checks and INSERT below form one serial decision rather than a TOCTOU
+    // window in which a reply/block could arrive between them.
+    await lockMessageParticipants(tx, senderId, recipientId);
+    await lockConversationMessages(tx, conversationId);
+
+    const currentConv = await tx.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        buyer: true,
+        seller: true,
+        messages: {
+          orderBy: { createdAt: "desc" },
+          take: 1
+        }
+      }
+    });
+
+    if (!currentConv) return null;
+    const currentRecipient = currentConv.buyerId === recipientId ? currentConv.buyer : currentConv.seller;
+    const currentSender = currentConv.buyerId === senderId ? currentConv.buyer : currentConv.seller;
+    if (currentRecipient.id !== recipientId || currentSender.id !== senderId) return null;
+    if (!currentRecipient.autoReplyEnabled || currentRecipient.isBlocked || currentSender.isBlocked) return null;
+
+    const blocked = await tx.userBlock.findFirst({
+      where: {
+        OR: [
+          { blockerId: currentRecipient.id, blockedId: currentSender.id },
+          { blockerId: currentSender.id, blockedId: currentRecipient.id }
+        ]
+      },
+      select: { id: true }
+    });
+    if (blocked) return null;
+
+    const lastMessage = currentConv.messages[0];
+    if (!lastMessage || lastMessage.senderId !== currentSender.id) return null;
+
+    const replyMsg = await tx.message.create({
+      data: {
+        conversationId,
+        senderId: currentRecipient.id,
+        body: currentRecipient.autoReplyMessage || "Hi! I am currently away. I'll get back to you shortly."
+      },
+      include: {
+        sender: {
+          select: { id: true, name: true }
+        }
+      }
+    });
+
+    await tx.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: new Date() }
+    });
+
+    return replyMsg;
+  });
+}
 
 export async function handleAutoReply(conversationId: string, senderId: string) {
   try {
@@ -56,44 +119,8 @@ export async function handleAutoReply(conversationId: string, senderId: string) 
       activeTimeouts.delete(timeoutKey);
       
       try {
-        // Double check if conversation still exists and the last message is still from the buyer
-        const currentConv = await prisma.conversation.findUnique({
-          where: { id: conversationId },
-          include: {
-            messages: {
-              orderBy: { createdAt: "desc" },
-              take: 1
-            }
-          }
-        });
-
-        if (!currentConv) return;
-        
-        // If the user has already replied manually in the meantime, cancel the auto-reply
-        const lastMessage = currentConv.messages[0];
-        if (lastMessage && lastMessage.senderId === recipient.id) {
-          return;
-        }
-
-        // Create the auto-reply message
-        const replyMsg = await prisma.message.create({
-          data: {
-            conversationId,
-            senderId: recipient.id,
-            body: recipient.autoReplyMessage || "Hi! I am currently away. I'll get back to you shortly."
-          },
-          include: {
-            sender: {
-              select: { id: true, name: true }
-            }
-          }
-        });
-
-        // Update conversation's updatedAt timestamp
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { updatedAt: new Date() }
-        });
+        const replyMsg = await sendQueuedAutoReply(conversationId, senderId, recipient.id);
+        if (!replyMsg) return;
 
         // Send to WebSocket room
         const io = getIo();

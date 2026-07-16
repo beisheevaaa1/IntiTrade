@@ -28,7 +28,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { io, Socket } from "socket.io-client";
 import { api, API_URL, mediaUrl } from "../../api/client";
 import { useAuth } from "../../state/AuthContext";
-import type { Conversation, Message, Listing } from "../../types";
+import type { Conversation, Message, Listing, ListingStatus, PresentedListing } from "../../types";
 
 const PRESETS = [
   "How much does it cost?",
@@ -43,6 +43,46 @@ const THEME_OPTIONS = [
   { name: "Royal Violet", value: "#7c3aed", hover: "hover:bg-violet-500" },
   { name: "Emerald Green", value: "#059669", hover: "hover:bg-emerald-500" }
 ];
+
+const MAX_AUTO_REPLY_DELAY_SECONDS = 1440;
+
+function normalizeAutoReplyDelay(value: number | string | null | undefined) {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.min(MAX_AUTO_REPLY_DELAY_SECONDS, Math.max(0, Math.trunc(parsed)));
+}
+
+function normalizeConversation(raw: Conversation & { listingSnapshot?: PresentedListing | null }): Conversation {
+  return {
+    ...raw,
+    // Accept the short-lived staged response shape as well as the current
+    // `listing` presentation returned for approved snapshots/placeholders.
+    listing: raw.listing ?? raw.listingSnapshot ?? null
+  };
+}
+
+function listingTitle(listing: PresentedListing | null | undefined) {
+  return typeof listing?.title === "string" && listing.title.trim() ? listing.title : "Listing unavailable";
+}
+
+function listingImage(listing: PresentedListing | null | undefined) {
+  const url = Array.isArray(listing?.images) ? listing.images[0]?.url : undefined;
+  return url ? mediaUrl(url) : "/placeholder-item.svg";
+}
+
+function listingIsAvailable(listing: PresentedListing | null | undefined) {
+  return Boolean(listing?.id && listing.status === "ACTIVE" && !listing.unavailable);
+}
+
+function listingStatusLabel(status?: ListingStatus) {
+  switch (status) {
+    case "PENDING": return "Pending moderation";
+    case "REJECTED": return "Not approved";
+    case "SOLD": return "Sold";
+    case "ARCHIVED": return "Archived";
+    default: return "Unavailable";
+  }
+}
 
 export function Inbox() {
   const navigate = useNavigate();
@@ -68,7 +108,7 @@ export function Inbox() {
   // Auto-Reply Settings State
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(user?.autoReplyEnabled || false);
   const [autoReplyMessage, setAutoReplyMessage] = useState(user?.autoReplyMessage || "");
-  const [autoReplyDelay, setAutoReplyDelay] = useState(user?.autoReplyDelay || 0);
+  const [autoReplyDelay, setAutoReplyDelay] = useState(normalizeAutoReplyDelay(user?.autoReplyDelay));
   
   // Privacy Settings State
   const [showOnlineStatus, setShowOnlineStatus] = useState(user?.showOnlineStatus !== false);
@@ -114,7 +154,8 @@ export function Inbox() {
   const fetchConversations = async (selectId?: string) => {
     try {
       const res = await api.get("/conversations");
-      const list: Conversation[] = res.data.conversations || [];
+      const list: Conversation[] = (Array.isArray(res.data.conversations) ? res.data.conversations : [])
+        .map((conversation: Conversation & { listingSnapshot?: PresentedListing | null }) => normalizeConversation(conversation));
       setConversations(list);
       
       const targetId = selectId || activeConvId;
@@ -143,7 +184,7 @@ export function Inbox() {
     if (user) {
       setAutoReplyEnabled(user.autoReplyEnabled || false);
       setAutoReplyMessage(user.autoReplyMessage || "Hi! Thanks for reaching out. I'll get back to you as soon as possible.");
-      setAutoReplyDelay(user.autoReplyDelay || 0);
+      setAutoReplyDelay(normalizeAutoReplyDelay(user.autoReplyDelay));
       setShowOnlineStatus(user.showOnlineStatus !== false);
     }
 
@@ -163,10 +204,6 @@ export function Inbox() {
       transports: ["websocket"]
     });
     socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log("Socket connected successfully");
-    });
 
     socket.on("message:new", (msg: Message) => {
       // If message is for the active conversation, append it
@@ -441,10 +478,11 @@ export function Inbox() {
     if (!activeConversation) return;
     try {
       const res = await api.patch(`/conversations/${activeConversation.id}/listing`, { listingId });
-      setActiveConversation(res.data.conversation);
+      const updatedConversation = normalizeConversation(res.data.conversation);
+      setActiveConversation(updatedConversation);
       setShowAttachmentModal(false);
       // Refresh list
-      fetchConversations(res.data.conversation.id);
+      fetchConversations(updatedConversation.id);
     } catch (err) {
       console.error("Failed to update conversation listing context:");
       alert("Failed to change attached product.");
@@ -455,10 +493,12 @@ export function Inbox() {
     e.preventDefault();
     setSavingSettings(true);
     try {
+      const normalizedAutoReplyDelay = normalizeAutoReplyDelay(autoReplyDelay);
+      setAutoReplyDelay(normalizedAutoReplyDelay);
       await api.patch("/auth/profile", {
         autoReplyEnabled,
         autoReplyMessage,
-        autoReplyDelay,
+        autoReplyDelay: normalizedAutoReplyDelay,
         showOnlineStatus,
         showAcademicProfile,
         resume: resumeText,
@@ -500,7 +540,7 @@ export function Inbox() {
   // Filter conversations based on search input
   const filteredConversations = conversations.filter((c) => {
     const partnerName = c.buyer.id === user?.id ? c.seller.name : c.buyer.name;
-    const titleMatch = c.listing?.title.toLowerCase().includes(searchQuery.toLowerCase()) || false;
+    const titleMatch = listingTitle(c.listing).toLowerCase().includes(searchQuery.toLowerCase());
     const partnerMatch = partnerName.toLowerCase().includes(searchQuery.toLowerCase());
     return titleMatch || partnerMatch;
   });
@@ -592,7 +632,7 @@ export function Inbox() {
                     </div>
                     <div className="flex items-center gap-1.5 mb-1.5">
                       <span className="text-[10px] font-medium bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded truncate max-w-[150px]">
-                        {chat.listing?.title}
+                        {listingTitle(chat.listing)}
                       </span>
                     </div>
                     <p className="text-xs truncate text-gray-500">
@@ -659,18 +699,28 @@ export function Inbox() {
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-10 h-10 rounded bg-white border border-border overflow-hidden shrink-0">
                 <img 
-                  src={activeConversation.listing?.images?.[0]?.url 
-                    ? mediaUrl(activeConversation.listing.images[0].url) 
-                    : "/placeholder-item.svg"}
-                  alt="Product" 
+                  src={listingImage(activeConversation.listing)}
+                  alt=""
                   className="w-full h-full object-cover" 
+                  onError={(event) => { event.currentTarget.src = "/placeholder-item.svg"; }}
                 />
               </div>
               <div className="min-w-0">
-                <Link to={`/product/${activeConversation.listing?.id}`} className="text-sm font-semibold text-gray-900 line-clamp-1 hover:underline">
-                  {activeConversation.listing?.title}
-                </Link>
-                <p className="text-xs text-primary font-bold">RM {parseFloat(activeConversation.listing?.price || "0").toFixed(2)}</p>
+                {listingIsAvailable(activeConversation.listing) ? (
+                  <Link to={`/product/${activeConversation.listing!.id}`} className="text-sm font-semibold text-gray-900 line-clamp-1 hover:underline">
+                    {listingTitle(activeConversation.listing)}
+                  </Link>
+                ) : (
+                  <p className="text-sm font-semibold text-gray-900 line-clamp-1">{listingTitle(activeConversation.listing)}</p>
+                )}
+                <div className="flex items-center gap-2">
+                  {typeof activeConversation.listing?.price === "string" && Number.isFinite(Number(activeConversation.listing.price)) && (
+                    <p className="text-xs text-primary font-bold">RM {Number(activeConversation.listing.price).toFixed(2)}</p>
+                  )}
+                  {!listingIsAvailable(activeConversation.listing) && (
+                    <span className="text-[10px] font-semibold text-amber-700">{listingStatusLabel(activeConversation.listing?.status)}</span>
+                  )}
+                </div>
               </div>
             </div>
             
@@ -1055,13 +1105,13 @@ export function Inbox() {
                           id="auto-reply-delay-sec"
                           type="number"
                           min={0}
-                          max={3600}
+                          max={MAX_AUTO_REPLY_DELAY_SECONDS}
                           required
                           value={autoReplyDelay}
-                          onChange={(e) => setAutoReplyDelay(parseInt(e.target.value) || 0)}
+                          onChange={(e) => setAutoReplyDelay(normalizeAutoReplyDelay(e.target.value))}
                           className="h-10 text-sm"
                         />
-                        <span className="text-[10px] text-muted-foreground mt-1 block">Set 0 for instant auto-replies.</span>
+                        <span className="text-[10px] text-muted-foreground mt-1 block">Set 0 for instant auto-replies (maximum 1440 seconds).</span>
                       </div>
                     </>
                   )}

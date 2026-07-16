@@ -8,6 +8,7 @@ import { handleAutoReply } from "./utils/autoReply.js";
 import { recordSocketConnection, recordSocketMessage } from "./monitoring.js";
 import { sessionTokenFromCookie } from "./utils/sessionCookie.js";
 import { isOwnedUploadUrl } from "./utils/uploadOwnership.js";
+import { lockConversationMessages, lockMessageParticipants } from "./utils/messageLocks.js";
 
 let ioInstance: SocketServer | null = null;
 
@@ -141,11 +142,6 @@ export function attachSocket(server: Server) {
         }
 
         const otherUserId = conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId;
-        const blocked = await prisma.userBlock.findFirst({
-          where: { OR: [{ blockerId: userId, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: userId }] }
-        });
-        if (blocked) return callback?.({ ok: false, message: "Messaging is unavailable" });
-
         const connectedSockets = Array.from(io.sockets.sockets.values());
         const isPartnerOnline = connectedSockets.some((connected) => connected.data.user?.id === otherUserId);
         const roomSocketIds = io.sockets.adapter.rooms.get(conversation.id) ?? new Set<string>();
@@ -153,6 +149,14 @@ export function attachSocket(server: Server) {
         const now = new Date();
 
         const message = await prisma.$transaction(async (tx) => {
+          await lockMessageParticipants(tx, userId, otherUserId);
+          await lockConversationMessages(tx, conversation.id);
+          const blocked = await tx.userBlock.findFirst({
+            where: { OR: [{ blockerId: userId, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: userId }] },
+            select: { id: true }
+          });
+          if (blocked) return null;
+
           const created = await tx.message.create({
             data: {
               conversationId: conversation.id,
@@ -169,6 +173,7 @@ export function attachSocket(server: Server) {
           await tx.conversation.update({ where: { id: conversation.id }, data: { updatedAt: now } });
           return created;
         });
+        if (!message) return callback?.({ ok: false, message: "Messaging is unavailable" });
 
         io.to(conversation.id).emit("message:new", message);
         io.to(`user:${otherUserId}`).emit("conversation:updated", { conversationId: conversation.id, message });

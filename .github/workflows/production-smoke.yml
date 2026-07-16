@@ -17,11 +17,86 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          html="$(curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/)"
-          curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/browse >/dev/null
-          curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/api/health | grep -q '"ok":true'
-          curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/api/health/ready | grep -q '"ready":true'
-          curl --fail --silent --show-error --retry 2 --max-time 15 https://adelina.adilkan.com/ >/dev/null
-          asset="$(printf '%s' "$html" | grep -oE 'src="/assets/[^"]+\.js"' | head -n1 | cut -d'"' -f2)"
-          test -n "$asset"
-          curl --fail --silent --show-error --retry 2 --max-time 15 "https://intitrade.shop${asset}" >/dev/null
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          token="$(date -u +%s%N)-$$"
+          bases=(https://intitrade.shop https://www.intitrade.shop https://adelina.adilkan.com)
+
+          for index in "${!bases[@]}"; do
+            base="${bases[$index]}"
+            curl --fail --silent --show-error --retry 2 --connect-timeout 5 --max-time 15 \
+              -H 'Cache-Control: no-cache' -D "$work/root-$index.headers" \
+              "$base/?smoke=$token-$index" -o "$work/root-$index.html"
+            grep -qi '^strict-transport-security:' "$work/root-$index.headers"
+            grep -qi '^content-security-policy:' "$work/root-$index.headers"
+
+            IFS=$'\t' read -r asset frontend_version < <(HTML_FILE="$work/root-$index.html" node <<'NODE'
+          const fs = require('node:fs');
+          const html = fs.readFileSync(process.env.HTML_FILE, 'utf8');
+          const assets = [...html.matchAll(/\bsrc\s*=\s*["']([^"']+\.js)["']/gi)].map((match) => match[1]);
+          const entry = assets.find((value) => value.startsWith('/assets/'));
+          const parseAttributes = (tag) => Object.fromEntries(
+            [...tag.matchAll(/\b([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*["']([^"']*)["']/g)]
+              .map((match) => [match[1].toLowerCase(), match[2]])
+          );
+          const release = [...html.matchAll(/<meta\b[^>]*>/gi)]
+            .map((match) => parseAttributes(match[0]))
+            .find((attributes) => attributes.name === 'intitrade-release')?.content;
+          if (!entry || !/^[0-9a-f]{7,40}$/.test(release || '')) process.exit(1);
+          process.stdout.write(`${entry}\t${release}\n`);
+          NODE
+            )
+            printf '%s\n' "$asset" > "$work/asset-$index.name"
+            printf '%s\n' "$frontend_version" > "$work/release-$index.name"
+            curl --fail --silent --show-error --retry 2 --connect-timeout 5 --max-time 15 \
+              -H 'Cache-Control: no-cache' -D "$work/asset-$index.headers" \
+              "$base$asset?smoke=$token-$index" -o "$work/asset-$index.js"
+            test -s "$work/asset-$index.js"
+            grep -Eqi '^content-type:[[:space:]]*(application|text)/(javascript|x-javascript)' "$work/asset-$index.headers"
+            if head -c 64 "$work/asset-$index.js" | grep -Eqi '<!doctype|<html'; then
+              echo "JavaScript asset resolved to an HTML fallback at $base" >&2
+              exit 1
+            fi
+            curl --fail --silent --show-error --retry 2 --connect-timeout 5 --max-time 15 \
+              "$base/browse?smoke=$token-$index" -o "$work/browse-$index.html"
+            cmp --silent "$work/root-$index.html" "$work/browse-$index.html"
+          done
+          cmp --silent "$work/asset-0.name" "$work/asset-1.name"
+          cmp --silent "$work/asset-0.name" "$work/asset-2.name"
+          cmp --silent "$work/release-0.name" "$work/release-1.name"
+          cmp --silent "$work/release-0.name" "$work/release-2.name"
+
+          primary_ready="$(curl --fail --silent --show-error --retry 2 --max-time 15 "https://intitrade.shop/api/health/ready?smoke=$token")"
+          alternate_ready="$(curl --fail --silent --show-error --retry 2 --max-time 15 "https://adelina.adilkan.com/api/health/ready?smoke=$token")"
+          deployed_version="$(PRIMARY_READY="$primary_ready" ALTERNATE_READY="$alternate_ready" node <<'NODE'
+          const primary = JSON.parse(process.env.PRIMARY_READY);
+          const alternate = JSON.parse(process.env.ALTERNATE_READY);
+          for (const value of [primary, alternate]) {
+            if (value.ready !== true || value.ok !== true || !/^[0-9a-f]{12}$/.test(value.version || '')) process.exit(1);
+          }
+          if (primary.version !== alternate.version) process.exit(1);
+          process.stdout.write(primary.version);
+          NODE
+          )"
+          frontend_version="$(<"$work/release-0.name")"
+          test "$frontend_version" = "$deployed_version"
+
+          source_version="${GITHUB_SHA:-}"
+          source_version="${source_version:0:12}"
+          if [[ -n "$source_version" && "$deployed_version" != "$source_version" ]]; then
+            echo "::warning title=Production revision drift::Production is healthy at $deployed_version; this workflow revision is $source_version."
+          fi
+          {
+            echo "### Production smoke"
+            echo
+            echo "Healthy deployed revision: \`$deployed_version\`"
+            if [[ -n "$source_version" ]]; then echo "Workflow revision: \`$source_version\`"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          categories="$(curl --fail --silent --show-error --retry 2 --max-time 15 https://intitrade.shop/api/listings/categories)"
+          CATEGORIES="$categories" node -e 'const value = JSON.parse(process.env.CATEGORIES); if (!Array.isArray(value.categories) || value.categories.length === 0) process.exit(1)'
+
+          socket="$(curl --fail --silent --show-error --retry 2 --max-time 15 -H 'Origin: https://intitrade.shop' "https://intitrade.shop/socket.io/?EIO=4&transport=polling&t=$token")"
+          SOCKET_PAYLOAD="$socket" node -e 'const value = process.env.SOCKET_PAYLOAD || ""; if (!value.startsWith("0{")) process.exit(1); JSON.parse(value.slice(1))'
+          bad_origin_status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-time 15 -H 'Origin: https://attacker.invalid' "https://intitrade.shop/socket.io/?EIO=4&transport=polling&t=$token-bad")"
+          case "$bad_origin_status" in 400|403) ;; *) echo "Unexpected Socket.IO bad-origin status: $bad_origin_status" >&2; exit 1 ;; esac

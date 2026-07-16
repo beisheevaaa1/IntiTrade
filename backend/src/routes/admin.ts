@@ -1,4 +1,4 @@
-import { AnnouncementStatus, ListingStatus, ReportStatus } from "@prisma/client";
+import { AnnouncementStatus, ListingStatus, ListingType, Prisma, ReportStatus } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAdmin, requireAuth } from "../middleware/auth.js";
@@ -7,9 +7,46 @@ import { checkReadiness } from "../health.js";
 import { getMonitoringSnapshot } from "../monitoring.js";
 import { writeAdminAction } from "../services/adminAudit.js";
 import { canChangeUserBlock, canModerateListing } from "../utils/adminRules.js";
+import { presentHistoricalListing } from "../utils/listingSnapshot.js";
+import {
+  listingInventoryConflict,
+  lockListingInventory,
+  settleProductInventory,
+  transactionListingType
+} from "../utils/listingInventory.js";
+import { lockMessageAccounts } from "../utils/messageLocks.js";
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
+
+class AdminMutationError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function isAdminInventoryDatabaseConflict(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2004";
+}
+
+const historicalListingSelect = {
+  id: true,
+  title: true,
+  price: true,
+  sellerId: true,
+  status: true
+} as const;
+
+function presentAdminTransaction<T extends {
+  listingSnapshot: Prisma.JsonValue | null;
+  listing: { id: string; sellerId: string; status: ListingStatus; [key: string]: unknown };
+}>(transaction: T) {
+  const { listingSnapshot, listing, ...safeTransaction } = transaction;
+  return {
+    ...safeTransaction,
+    listing: presentHistoricalListing(listing, listingSnapshot)
+  };
+}
 
 router.get("/overview", async (_req, res) => {
   const [pendingListings, openReports, users, activeListings, openSupportTickets] = await Promise.all([
@@ -43,40 +80,68 @@ router.patch("/listings/:id/status", async (req, res) => {
   if (!parsed.success || (parsed.data.status === ListingStatus.REJECTED && !parsed.data.rejectionReason?.trim())) {
     return res.status(400).json({ message: "A valid status and rejection reason are required" });
   }
-  const result = await prisma.$transaction(async (tx) => {
-    const current = await tx.listing.findUnique({
-      where: { id: req.params.id },
-      select: { id: true, sellerId: true, status: true, rejectionReason: true, updatedAt: true }
-    });
-    if (!current) return { outcome: "NOT_FOUND" as const };
-    if (!canModerateListing(current.status, parsed.data.status)) return { outcome: "INVALID_TRANSITION" as const };
-
-    const claimed = await tx.listing.updateMany({
-      where: { id: current.id, status: current.status, updatedAt: current.updatedAt },
-      data: {
-        status: parsed.data.status,
-        rejectionReason: parsed.data.status === ListingStatus.REJECTED ? parsed.data.rejectionReason?.trim() : null
+  let result;
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      await lockListingInventory(tx, req.params.id);
+      const current = await tx.listing.findUnique({
+        where: { id: req.params.id },
+        select: {
+          id: true,
+          sellerId: true,
+          status: true,
+          rejectionReason: true,
+          updatedAt: true,
+          type: true,
+          quantity: true
+        }
+      });
+      if (!current) return { outcome: "NOT_FOUND" as const };
+      if (!canModerateListing(current.status, parsed.data.status)) return { outcome: "INVALID_TRANSITION" as const };
+      if (parsed.data.status === ListingStatus.ACTIVE) {
+        const inventoryConflict = await listingInventoryConflict(tx, {
+          listingId: current.id,
+          nextType: current.type,
+          nextQuantity: current.quantity
+        });
+        if (inventoryConflict) {
+          return { outcome: "INVENTORY_CONFLICT" as const, message: inventoryConflict.message };
+        }
       }
+
+      const claimed = await tx.listing.updateMany({
+        where: { id: current.id, status: current.status, updatedAt: current.updatedAt },
+        data: {
+          status: parsed.data.status,
+          rejectionReason: parsed.data.status === ListingStatus.REJECTED ? parsed.data.rejectionReason?.trim() : null
+        }
+      });
+      if (claimed.count !== 1) return { outcome: "CONFLICT" as const };
+      const updated = await tx.listing.findUniqueOrThrow({ where: { id: current.id } });
+      await writeAdminAction(tx, {
+        adminId: req.user!.id,
+        requestId: String(res.locals.requestId ?? ""),
+        action: `LISTING_${parsed.data.status}`,
+        entityType: "Listing",
+        entityId: updated.id,
+        reason: parsed.data.rejectionReason?.trim(),
+        before: { status: current.status, rejectionReason: current.rejectionReason },
+        after: { status: updated.status, rejectionReason: updated.rejectionReason }
+      });
+      await tx.notification.create({
+        data: { userId: updated.sellerId, type: `LISTING_${parsed.data.status}`, payload: JSON.stringify({ listingId: updated.id, reason: updated.rejectionReason }) }
+      });
+      return { outcome: "UPDATED" as const, listing: updated };
     });
-    if (claimed.count !== 1) return { outcome: "CONFLICT" as const };
-    const updated = await tx.listing.findUniqueOrThrow({ where: { id: current.id } });
-    await writeAdminAction(tx, {
-      adminId: req.user!.id,
-      requestId: String(res.locals.requestId ?? ""),
-      action: `LISTING_${parsed.data.status}`,
-      entityType: "Listing",
-      entityId: updated.id,
-      reason: parsed.data.rejectionReason?.trim(),
-      before: { status: current.status, rejectionReason: current.rejectionReason },
-      after: { status: updated.status, rejectionReason: updated.rejectionReason }
-    });
-    await tx.notification.create({
-      data: { userId: updated.sellerId, type: `LISTING_${parsed.data.status}`, payload: JSON.stringify({ listingId: updated.id, reason: updated.rejectionReason }) }
-    });
-    return { outcome: "UPDATED" as const, listing: updated };
-  });
+  } catch (error) {
+    if (isAdminInventoryDatabaseConflict(error)) {
+      return res.status(409).json({ message: "Listing inventory changed while this request was being processed" });
+    }
+    throw error;
+  }
   if (result.outcome === "NOT_FOUND") return res.status(404).json({ message: "Listing not found" });
   if (result.outcome === "INVALID_TRANSITION") return res.status(409).json({ message: "This listing status transition is not allowed" });
+  if (result.outcome === "INVENTORY_CONFLICT") return res.status(409).json({ message: result.message });
   if (result.outcome === "CONFLICT") return res.status(409).json({ message: "The listing changed during review. Reload it before moderating." });
   res.json({ listing: result.listing });
 });
@@ -89,7 +154,19 @@ router.get("/reports", async (_req, res) => {
     },
     orderBy: { createdAt: "desc" }
   });
-  res.json({ reports });
+  res.json({
+    reports: reports.map((report) => {
+      const { listingSnapshot, listing, ...safeReport } = report;
+      const { seller, ...currentListing } = listing;
+      return {
+        ...safeReport,
+        listing: {
+          ...presentHistoricalListing(currentListing, listingSnapshot),
+          seller
+        }
+      };
+    })
+  });
 });
 
 router.patch("/reports/:id", async (req, res) => {
@@ -111,7 +188,8 @@ router.patch("/reports/:id", async (req, res) => {
     return updated;
   });
 
-  res.json({ report });
+  const { listingSnapshot: _snapshot, ...safeReport } = report;
+  res.json({ report: safeReport });
 });
 
 router.patch("/users/:id/block", async (req, res) => {
@@ -128,6 +206,7 @@ router.patch("/users/:id/block", async (req, res) => {
     return res.status(409).json({ message: "User already has this block status" });
   }
   const user = await prisma.$transaction(async (tx) => {
+    await lockMessageAccounts(tx, current.id);
     const updated = await tx.user.update({
       where: { id: current.id },
       data: {
@@ -198,13 +277,13 @@ router.get("/users", async (_req, res) => {
 router.get("/transactions", async (_req, res) => {
   const transactions = await prisma.transaction.findMany({
     include: {
-      listing: { select: { id: true, title: true, price: true } },
+      listing: { select: historicalListingSelect },
       buyer: { select: { id: true, name: true, email: true } },
       seller: { select: { id: true, name: true, email: true } }
     },
     orderBy: { createdAt: "desc" }
   });
-  res.json({ transactions });
+  res.json({ transactions: transactions.map(presentAdminTransaction) });
 });
 
 router.get("/reviews", async (_req, res) => {
@@ -212,12 +291,17 @@ router.get("/reviews", async (_req, res) => {
     include: {
       reviewer: { select: { id: true, name: true, email: true } },
       reviewee: { select: { id: true, name: true, email: true, isBlocked: true } },
-      transaction: { include: { listing: { select: { id: true, title: true } } } }
+      transaction: { include: { listing: { select: historicalListingSelect } } }
     },
     orderBy: { createdAt: "desc" },
     take: 200
   });
-  res.json({ reviews });
+  res.json({
+    reviews: reviews.map((review) => ({
+      ...review,
+      transaction: presentAdminTransaction(review.transaction)
+    }))
+  });
 });
 
 router.get("/announcements", async (_req, res) => {
@@ -267,13 +351,13 @@ router.patch("/announcements/:id/status", async (req, res) => {
   const disputes = await prisma.transaction.findMany({
     where: { status: "DISPUTED" },
     include: {
-      listing: { select: { id: true, title: true, price: true } },
+      listing: { select: historicalListingSelect },
       buyer: { select: { id: true, name: true, email: true } },
       seller: { select: { id: true, name: true, email: true } }
     },
     orderBy: { createdAt: "desc" }
   });
-  res.json({ disputes });
+  res.json({ disputes: disputes.map(presentAdminTransaction) });
 });
 
 router.patch("/disputes/:id/resolve", async (req, res) => {
@@ -298,6 +382,16 @@ router.patch("/disputes/:id/resolve", async (req, res) => {
   let updated;
   try {
     updated = await prisma.$transaction(async (tx) => {
+      await lockListingInventory(tx, transaction.listingId);
+      const reservedListingType = parsed.data.verdict === "COMPLETED"
+        ? transactionListingType(transaction.listingSnapshot, transaction.listingId)
+        : null;
+      if (parsed.data.verdict === "COMPLETED" && reservedListingType === null) {
+        throw new AdminMutationError(
+          409,
+          "Reservation inventory evidence is incomplete. Resolve the snapshot before completing this dispute."
+        );
+      }
       const claimed = await tx.transaction.updateMany({
         where: { id: transaction.id, status: "DISPUTED" },
         data: {
@@ -308,17 +402,15 @@ router.patch("/disputes/:id/resolve", async (req, res) => {
       });
       if (claimed.count !== 1) return null;
 
-      if (parsed.data.verdict === "COMPLETED" && transaction.listing.type === "PRODUCT") {
-        const stock = await tx.listing.updateMany({
-          where: { id: transaction.listingId, quantity: { gte: transaction.quantity } },
-          data: { quantity: { decrement: transaction.quantity } }
-        });
-        if (stock.count !== 1) throw new Error("DISPUTE_STOCK_CONFLICT");
-        const listing = await tx.listing.findUniqueOrThrow({ where: { id: transaction.listingId }, select: { quantity: true } });
-        if (listing.quantity === 0) await tx.listing.update({ where: { id: transaction.listingId }, data: { status: "SOLD" } });
+      if (parsed.data.verdict === "COMPLETED" && reservedListingType === ListingType.PRODUCT) {
+        const settled = await settleProductInventory(tx, transaction.listingId, transaction.quantity);
+        if (!settled) throw new AdminMutationError(409, "Listing stock changed. Review the dispute before trying again.");
       }
 
-      const resolved = await tx.transaction.findUniqueOrThrow({ where: { id: transaction.id } });
+      const resolved = await tx.transaction.findUniqueOrThrow({
+        where: { id: transaction.id },
+        include: { listing: { select: historicalListingSelect } }
+      });
       await writeAdminAction(tx, {
         adminId: req.user!.id,
         requestId: String(res.locals.requestId ?? ""),
@@ -337,14 +429,15 @@ router.patch("/disputes/:id/resolve", async (req, res) => {
       return resolved;
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "DISPUTE_STOCK_CONFLICT") {
-      return res.status(409).json({ message: "Listing stock changed. Review the dispute before trying again." });
+    if (error instanceof AdminMutationError) return res.status(error.status).json({ message: error.message });
+    if (isAdminInventoryDatabaseConflict(error)) {
+      return res.status(409).json({ message: "Listing inventory changed while this dispute was being resolved" });
     }
     throw error;
   }
   if (!updated) return res.status(409).json({ message: "This dispute has already been resolved" });
 
-  res.json({ transaction: updated });
+  res.json({ transaction: presentAdminTransaction(updated) });
 });
 
 export default router;

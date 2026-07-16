@@ -248,20 +248,22 @@ model Favorite {
 }
 
 model Conversation {
-  id        String    @id @default(uuid())
-  listingId String
-  buyerId   String
-  sellerId  String
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  listing   Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  buyer     User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
-  seller    User      @relation("SellerConversations", fields: [sellerId], references: [id], onDelete: Cascade)
-  messages  Message[]
+  id              String    @id @default(uuid())
+  listingId       String
+  listingSnapshot Json?
+  buyerId         String
+  sellerId        String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  listing         Listing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyer           User      @relation("BuyerConversations", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller          User      @relation("SellerConversations", fields: [sellerId], references: [id], onDelete: Cascade)
+  messages        Message[]
 
   @@unique([listingId, buyerId, sellerId])
   @@index([buyerId])
   @@index([sellerId])
+  @@index([listingSnapshot(ops: JsonbPathOps)], type: Gin)
 }
 
 model Message {
@@ -282,16 +284,19 @@ model Message {
 }
 
 model Report {
-  id         String       @id @default(uuid())
-  reason     String
-  details    String?
-  status     ReportStatus @default(OPEN)
-  reporterId String
-  listingId  String
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
-  reporter   User         @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
-  listing    Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  id              String       @id @default(uuid())
+  reason          String
+  details         String?
+  status          ReportStatus @default(OPEN)
+  reporterId      String
+  listingId       String
+  listingSnapshot Json?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  reporter        User         @relation("ReporterReports", fields: [reporterId], references: [id], onDelete: Cascade)
+  listing         Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([listingSnapshot(ops: JsonbPathOps)], type: Gin)
 }
 
 model AdminActionLog {
@@ -330,19 +335,20 @@ model Notification {
 }
 
 model Transaction {
-  id            String            @id @default(uuid())
-  listingId     String
-  buyerId       String
-  sellerId      String
-  price         Decimal           @db.Decimal(10, 2)
-  quantity      Int               @default(1)
-  status        TransactionStatus @default(RESERVED)
-  meetupPointId String?
-  otpCode       String?
-  completedAt   DateTime?
-  cancelledAt   DateTime?
-  disputeReason String?
-  createdAt     DateTime          @default(now())
+  id              String            @id @default(uuid())
+  listingId       String
+  listingSnapshot Json?
+  buyerId         String
+  sellerId        String
+  price           Decimal           @db.Decimal(10, 2)
+  quantity        Int               @default(1)
+  status          TransactionStatus @default(RESERVED)
+  meetupPointId   String?
+  otpCode         String?
+  completedAt     DateTime?
+  cancelledAt     DateTime?
+  disputeReason   String?
+  createdAt       DateTime          @default(now())
 
   listing     Listing      @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyer       User         @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Cascade)
@@ -352,6 +358,7 @@ model Transaction {
 
   @@index([buyerId, status])
   @@index([sellerId, status])
+  @@index([listingSnapshot(ops: JsonbPathOps)], type: Gin)
 }
 
 model Review {

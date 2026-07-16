@@ -862,8 +862,12 @@ export function AdminPage() {
                             {report.status}
                           </Badge>
                           <h3 className="font-bold text-lg text-foreground">
-                            Reported Listing: <Link to={`/product/${report.listing?.id}`} className="text-primary hover:underline">{report.listing?.title}</Link>
+                            Reported approved version: {report.listing?.title || "Listing unavailable"}
                           </h3>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                            {report.listing?.isSnapshot && <Badge variant="outline">Immutable snapshot</Badge>}
+                            {report.listing?.id && <Link to={`/product/${report.listing.id}`} className="text-primary hover:underline">Open current listing for comparison</Link>}
+                          </div>
                           <p className="text-xs text-muted-foreground">
                             Submitted by: <span className="font-semibold text-gray-700">{report.reporter?.name}</span> ({report.reporter?.email})
                           </p>

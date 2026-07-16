@@ -3,12 +3,15 @@ import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
 import { ListingStatus } from "@prisma/client";
 import { z } from "zod";
+import { presentRelatedListing } from "../utils/listingSnapshot.js";
 
 const router = Router();
 
 router.get("/", requireAuth, async (req, res) => {
   const favorites = await prisma.favorite.findMany({
-    where: { userId: req.user!.id },
+    where: {
+      userId: req.user!.id
+    },
     include: {
       listing: {
         include: {
@@ -20,7 +23,12 @@ router.get("/", requireAuth, async (req, res) => {
     },
     orderBy: { createdAt: "desc" }
   });
-  res.json({ favorites });
+  res.json({
+    favorites: favorites.map((favorite) => ({
+      ...favorite,
+      listing: presentRelatedListing(favorite.listing, null, false)
+    }))
+  });
 });
 
 router.post("/:listingId", requireAuth, async (req, res) => {

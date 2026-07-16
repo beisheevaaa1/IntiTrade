@@ -4,6 +4,8 @@ import { z } from "zod";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
 import { canAttachMediaUrl } from "../utils/uploadOwnership.js";
+import { listingMediaValidationMessage } from "../utils/validation.js";
+import { listingInventoryConflict, lockListingInventory } from "../utils/listingInventory.js";
 
 const router = Router();
 
@@ -169,7 +171,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
 const listingSchema = z.object({
   title: z.string().trim().min(4).max(120),
   description: z.string().trim().min(10).max(2000),
-  price: z.coerce.number().min(0),
+  price: z.coerce.number().min(0).max(1_000_000),
   isNegotiable: z.boolean().optional(),
   showPhone: z.boolean().optional(),
   type: z.nativeEnum(ListingType),
@@ -189,41 +191,78 @@ const listingSchema = z.object({
   imageUrls: z.array(z.string().max(500)).max(25).optional()
 });
 
+async function listingReferenceValidationMessage(categoryId?: string, meetupPointId?: string | null) {
+  const [category, meetupPoint] = await Promise.all([
+    categoryId ? prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } }) : Promise.resolve({ id: "unchanged" }),
+    meetupPointId ? prisma.meetupPoint.findUnique({ where: { id: meetupPointId }, select: { id: true, isActive: true } }) : Promise.resolve({ id: "unchanged", isActive: true })
+  ]);
+  if (!category) return "Category is not available";
+  if (!meetupPoint?.isActive) return "Meetup point is not available";
+  return null;
+}
+
+function isListingReferenceConflict(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003";
+}
+
+function isListingInventoryDatabaseConflict(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2004";
+}
+
+class ListingMutationError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
 router.post("/", requireAuth, async (req, res) => {
   const parsed = listingSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing data", errors: parsed.error.flatten() });
   const data = parsed.data;
+  const mediaError = listingMediaValidationMessage(data.imageUrls ?? []);
+  if (mediaError) return res.status(400).json({ message: mediaError });
   if ((data.imageUrls ?? []).some((url) => !canAttachMediaUrl(req.user!.id, url))) {
     return res.status(403).json({ message: "A listing can only use media uploaded by its seller" });
   }
-  const listing = await prisma.listing.create({
-    data: {
-      title: data.title,
-      description: data.description,
-      price: data.price,
-      type: data.type,
-      condition: data.type === ListingType.PRODUCT ? data.condition ?? ListingCondition.GOOD : ListingCondition.NOT_APPLICABLE,
-      location: data.location,
-      meetupPreference: data.meetupPreference,
-      meetupPointId: data.meetupPointId,
-      quantity: data.type === ListingType.PRODUCT ? data.quantity ?? 1 : 1,
-      isRecurring: data.type !== ListingType.PRODUCT,
-      isNegotiable: data.isNegotiable ?? false,
-      showPhone: data.showPhone ?? false,
-      isbn: data.isbn,
-      author: data.author,
-      edition: data.edition,
-      courseCode: data.courseCode,
-      serviceDuration: data.serviceDuration,
-      pricingUnit: data.pricingUnit,
-      availabilityNote: data.availabilityNote,
-      categoryId: data.categoryId,
-      sellerId: req.user!.id,
-      status: ListingStatus.PENDING,
-      images: { create: (data.imageUrls ?? []).map((url) => ({ url })) }
-    },
-    include: listingInclude
-  });
+  const referenceError = await listingReferenceValidationMessage(data.categoryId, data.meetupPointId);
+  if (referenceError) return res.status(400).json({ message: referenceError });
+  let listing;
+  try {
+    listing = await prisma.listing.create({
+      data: {
+        title: data.title,
+        description: data.description,
+        price: data.price,
+        type: data.type,
+        condition: data.type === ListingType.PRODUCT ? data.condition ?? ListingCondition.GOOD : ListingCondition.NOT_APPLICABLE,
+        location: data.location,
+        meetupPreference: data.meetupPreference,
+        meetupPointId: data.meetupPointId,
+        quantity: data.type === ListingType.PRODUCT ? data.quantity ?? 1 : 1,
+        isRecurring: data.type !== ListingType.PRODUCT,
+        isNegotiable: data.isNegotiable ?? false,
+        showPhone: data.showPhone ?? false,
+        isbn: data.isbn,
+        author: data.author,
+        edition: data.edition,
+        courseCode: data.courseCode,
+        serviceDuration: data.serviceDuration,
+        pricingUnit: data.pricingUnit,
+        availabilityNote: data.availabilityNote,
+        categoryId: data.categoryId,
+        sellerId: req.user!.id,
+        status: ListingStatus.PENDING,
+        images: { create: (data.imageUrls ?? []).map((url) => ({ url })) }
+      },
+      include: listingInclude
+    });
+  } catch (error) {
+    if (isListingReferenceConflict(error)) return res.status(400).json({ message: "Category or meetup point is no longer available" });
+    if (isListingInventoryDatabaseConflict(error)) {
+      return res.status(409).json({ message: "Listing inventory changed while this request was being processed" });
+    }
+    throw error;
+  }
   res.status(201).json({ listing: presentListing(listing) });
 });
 
@@ -234,35 +273,91 @@ router.patch("/:id", requireAuth, async (req, res) => {
   const parsed = listingSchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing data", errors: parsed.error.flatten() });
   const { imageUrls, ...data } = parsed.data;
+  const mediaError = listingMediaValidationMessage(imageUrls ?? []);
+  if (mediaError) return res.status(400).json({ message: mediaError });
   const existingImageUrls = new Set(existing.images.map((image) => image.url));
   if ((imageUrls ?? []).some((url) => !existingImageUrls.has(url) && !canAttachMediaUrl(req.user!.id, url))) {
     return res.status(403).json({ message: "A listing can only use media uploaded by its seller" });
   }
-  const updateData: Prisma.ListingUncheckedUpdateInput = {
-    ...data,
-    isRecurring: data.type ? data.type !== ListingType.PRODUCT : undefined,
-    condition: data.type && data.type !== ListingType.PRODUCT ? ListingCondition.NOT_APPLICABLE : data.condition,
-    status: ListingStatus.PENDING,
-    images: imageUrls ? { deleteMany: {}, create: imageUrls.map((url) => ({ url })) } : undefined
-  };
-  const updated = await prisma.listing.update({
-    where: { id: existing.id },
-    data: updateData,
-    include: listingInclude
-  });
+  const referenceError = await listingReferenceValidationMessage(data.categoryId, data.meetupPointId);
+  if (referenceError) return res.status(400).json({ message: referenceError });
+  let updated;
+  try {
+    updated = await prisma.$transaction(async (tx) => {
+      await lockListingInventory(tx, existing.id);
+      const current = await tx.listing.findUnique({
+        where: { id: existing.id },
+        select: { id: true, sellerId: true, type: true, quantity: true, condition: true }
+      });
+      if (!current) throw new ListingMutationError(404, "Listing not found");
+      if (current.sellerId !== req.user!.id) throw new ListingMutationError(403, "Only the seller can edit this listing");
+
+      const nextType = data.type ?? current.type;
+      const nextQuantity = nextType === ListingType.PRODUCT ? data.quantity ?? current.quantity : 1;
+      const inventoryConflict = await listingInventoryConflict(tx, {
+        listingId: current.id,
+        nextType,
+        nextQuantity
+      });
+      if (inventoryConflict) throw new ListingMutationError(409, inventoryConflict.message);
+
+      const updateData: Prisma.ListingUncheckedUpdateInput = {
+        ...data,
+        quantity: data.type !== undefined || data.quantity !== undefined ? nextQuantity : undefined,
+        isRecurring: data.type ? data.type !== ListingType.PRODUCT : undefined,
+        condition: data.type
+          ? data.type === ListingType.PRODUCT
+            ? data.condition ?? (current.type === ListingType.PRODUCT ? current.condition : ListingCondition.GOOD)
+            : ListingCondition.NOT_APPLICABLE
+          : data.condition,
+        status: ListingStatus.PENDING,
+        images: imageUrls ? { deleteMany: {}, create: imageUrls.map((url) => ({ url })) } : undefined
+      };
+      return tx.listing.update({
+        where: { id: current.id },
+        data: updateData,
+        include: listingInclude
+      });
+    });
+  } catch (error) {
+    if (error instanceof ListingMutationError) return res.status(error.status).json({ message: error.message });
+    if (isListingReferenceConflict(error)) return res.status(400).json({ message: "Category or meetup point is no longer available" });
+    if (isListingInventoryDatabaseConflict(error)) {
+      return res.status(409).json({ message: "Listing inventory changed while this request was being processed" });
+    }
+    throw error;
+  }
   res.json({ listing: presentListing(updated) });
 });
 
 router.patch("/:id/status", requireAuth, async (req, res) => {
   const parsed = z.object({ status: z.nativeEnum(ListingStatus) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid listing status" });
-  const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
-  if (!listing) return res.status(404).json({ message: "Listing not found" });
-  const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED];
-  const sellerAllowed = listing.sellerId === req.user!.id && sellerStatuses.includes(parsed.data.status);
-  if (!sellerAllowed) return res.status(403).json({ message: "Only the seller can change this listing status" });
-  const updated = await prisma.listing.update({ where: { id: listing.id }, data: { status: parsed.data.status }, include: listingInclude });
-  res.json({ listing: presentListing(updated) });
+  let result;
+  try {
+    result = await prisma.$transaction(async (tx) => {
+      await lockListingInventory(tx, req.params.id);
+      const listing = await tx.listing.findUnique({ where: { id: req.params.id } });
+      if (!listing) return { outcome: "NOT_FOUND" as const };
+      const sellerStatuses: ListingStatus[] = [ListingStatus.SOLD, ListingStatus.ARCHIVED];
+      const sellerAllowed = listing.sellerId === req.user!.id && sellerStatuses.includes(parsed.data.status);
+      if (!sellerAllowed) return { outcome: "FORBIDDEN" as const };
+      const updated = await tx.listing.update({
+        where: { id: listing.id },
+        data: { status: parsed.data.status },
+        include: listingInclude
+      });
+      return { outcome: "UPDATED" as const, listing: updated };
+    });
+  } catch (error) {
+    if (isListingInventoryDatabaseConflict(error)) {
+      return res.status(409).json({ message: "Listing inventory changed while this request was being processed" });
+    }
+    throw error;
+  }
+  if (result.outcome === "NOT_FOUND") return res.status(404).json({ message: "Listing not found" });
+  if (result.outcome === "FORBIDDEN") return res.status(403).json({ message: "Only the seller can change this listing status" });
+  res.json({ listing: presentListing(result.listing) });
 });
 
 export default router;

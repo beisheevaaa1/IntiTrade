@@ -58,6 +58,12 @@ jobs:
         working-directory: backend
         env:
           NODE_ENV: test
+      - name: Verify rolling-deploy snapshot compatibility
+        run: npx prisma db execute --schema prisma/schema.prisma --file prisma/snapshot-compatibility-smoke.sql
+        working-directory: backend
+      - name: Verify production data precondition SQL
+        run: npx prisma db execute --schema prisma/schema.prisma --file prisma/predeploy-data-checks.sql
+        working-directory: backend
       - name: Build backend
         run: npm run build
         working-directory: backend
@@ -78,7 +84,11 @@ jobs:
           for script in deploy/*.sh; do bash -n "$script"; done
           node --input-type=module <<'EOF' | bash -n
           import assert from 'node:assert/strict';
+          import { execFileSync, spawn, spawnSync } from 'node:child_process';
           import fs from 'node:fs';
+          import os from 'node:os';
+          import path from 'node:path';
+          import net from 'node:net';
           const source = fs.readFileSync('backend/ssh_deploy.js', 'utf8').replace(/\r\n/g, '\n');
           const marker = '  const script = ';
           const start = source.indexOf(marker);
@@ -88,8 +98,208 @@ jobs:
           const validation = rendered.split('\n').find((line) => line.includes('dist/env.js'));
           assert.equal(validation, 'runuser -u intitrade -- env HOME=/var/lib/intitrade bash -c \'cd "$1" && exec "$2" --input-type=module --eval "$3"\' -- "$RELEASE" "$NODE_BIN" \'await import("./dist/env.js")\'');
           assert.match(rendered, /verify_health_json "\$health" "\$EXPECTED_VERSION"/);
-          assert.match(rendered, /verify_health_json "\$public_health" "\$EXPECTED_VERSION"/);
+          assert.match(rendered, /verify_public_frontend "https:\/\/intitrade\.shop"/);
+          assert.match(rendered, /verify_public_frontend "https:\/\/www\.intitrade\.shop"/);
+          assert.match(rendered, /verify_public_frontend "https:\/\/adelina\.adilkan\.com"/);
+          assert.match(rendered, /verify_public_health "https:\/\/intitrade\.shop"/);
+          assert.match(rendered, /verify_public_health "https:\/\/adelina\.adilkan\.com"/);
+          assert.match(rendered, /--resolve "intitrade\.shop:443:127\.0\.0\.1"/);
+          assert.match(rendered, /cmp --silent frontend\/current\/index\.html/);
+          assert.match(rendered, /VERIFY_TOKEN="\$\{EXPECTED_VERSION\}-\$\(date -u \+%s%N\)-\$\$"/);
+          assert.match(rendered, /verify_frontend_html "\$output_file"/);
+          assert.match(rendered, /EXPECTED_FRONTEND_VERSION="\$EXPECTED_VERSION"/);
+          assert.match(rendered, /attributes\.name === "intitrade-release" && attributes\.content === process\.env\.EXPECTED_FRONTEND_VERSION/);
+          assert.match(rendered, /application\/javascript\*\|text\/javascript\*/);
+          assert.match(rendered, /\.asset\.tmp/);
+          assert.match(rendered, /mv -- "\$\{output_file\}\.asset\.tmp" "\$\{output_file\}\.asset"/);
+          assert.doesNotMatch(rendered, /asset_type=.*\|\| true/);
+          assert.match(rendered, /\?deploy=\$\{VERIFY_TOKEN\}-\$\{attempt\}/);
           assert.doesNotMatch(rendered, /grep -Fq ""ready"/);
+          assert.match(rendered, /BACKEND_ROLLBACK_TARGET="\$PREVIOUS_BACKEND_TARGET"/);
+          assert.match(rendered, /BACKEND_REQUIRED_SCHEMA_COMPATIBILITY="\$PREVIOUS_SCHEMA_COMPATIBILITY"/);
+          assert.match(rendered, /BACKEND_RELEASE_MODE=roll-forward BACKEND_ROLLFORWARD_TARGET="\$RELEASE" BACKEND_REQUIRED_SCHEMA_COMPATIBILITY="\$EXPECTED_SCHEMA_COMPATIBILITY"/);
+          assert.match(rendered, /FRONTEND_ROLLBACK_TARGET="\$PREVIOUS_FRONTEND_TARGET"/);
+          assert.match(rendered, /frontend rollback target mismatch/);
+          assert.match(rendered, /status=70/);
+          assert.match(rendered, /verify_ok_json "\$rollback_health"/);
+          assert.match(rendered, /health_status=.*--write-out "%\{http_code\}"/);
+          assert.match(rendered, /elif \[ "\$health_status" = "404" \] && \[ "\$compatibility" = "legacy" \]; then\n\s+rollback_health=.*\n\s+if verify_ok_json "\$rollback_health"/);
+          assert.equal(rendered.match(/verify_ok_json "\$rollback_health"/g)?.length, 1);
+          assert.doesNotMatch(rendered, /grep -Eq .*\(ready\|ok\)/);
+          assert.match(rendered, /SCHEMA_MUTATION_STARTED=1\n.*schema-compatibility\.pending/s);
+          assert.match(rendered, /SCHEMA_MIGRATIONS_COMPLETE=1/);
+          const releaseStage = rendered.indexOf('[6/12] Staging immutable backend and frontend releases');
+          const predeployCheck = rendered.indexOf('\nrun_predeploy_checks\n', releaseStage);
+          const backupStep = rendered.indexOf('[7/12] Creating a verified pre-migration backup');
+          const schemaBoundary = rendered.indexOf('SCHEMA_MUTATION_STARTED=1', predeployCheck);
+          assert.ok(predeployCheck >= 0 && predeployCheck < backupStep && backupStep < schemaBoundary, 'data preconditions must run before backup, maintenance, and schema mutation');
+          assert.equal(rendered.match(/^run_predeploy_checks$/gm)?.length, 3, 'preconditions must be rechecked after backup and after writes are quiesced');
+          assert.match(rendered, /BEGIN TRANSACTION READ ONLY/);
+          assert.match(rendered, /Predeploy data checks must remain read-only and cannot control their transaction/);
+          const predeployWrapperLine = rendered.split('\n').find((line) => line.includes('PREDEPLOY_SOURCE=') && line.includes('--eval'));
+          const predeployWrapperSource = predeployWrapperLine?.match(/--eval '(.*)'$/)?.[1];
+          assert.ok(predeployWrapperSource, 'read-only predeploy wrapper was not found');
+          const evaluatePredeployWrapper = (source) => {
+            let wrapped = '';
+            Function('require', 'process', predeployWrapperSource)(
+              (specifier) => {
+                assert.equal(specifier, 'node:fs');
+                return {
+                  readFileSync: () => source,
+                  writeFileSync: (_file, value) => { wrapped = value; }
+                };
+              },
+              { env: { PREDEPLOY_SOURCE: '/tmp/source.sql', PREDEPLOY_WRAPPED: '/tmp/wrapped.sql' } }
+            );
+            return wrapped;
+          };
+          const checkedPredeploySql = fs.readFileSync('backend/prisma/predeploy-data-checks.sql', 'utf8');
+          assert.equal(evaluatePredeployWrapper(checkedPredeploySql), `BEGIN TRANSACTION READ ONLY;\n${checkedPredeploySql}\nCOMMIT;\n`);
+          assert.throws(() => evaluatePredeployWrapper('COMMIT; DELETE FROM "User";'), /must remain read-only/);
+          assert.match(rendered, /select-deployment-recovery\.sh/);
+          assert.match(rendered, /enter_schema_maintenance/);
+          assert.match(rendered, /maintenance_status" = "503"/);
+          assert.match(rendered, /rm -f -- "\$UPLOAD_CLEANUP_CRON"/);
+          assert.match(rendered, /flock -w 30 8/);
+          assert.match(rendered, /value\.maintenance === true && value\.code === "DEPLOYMENT_MAINTENANCE"/);
+          assert.match(rendered, /recovery_mode="roll-forward"/);
+          assert.doesNotMatch(rendered, /BACKEND_RELEASE_MODE=rollback BACKEND_ROLLBACK_TARGET="\$PREVIOUS_BACKEND_TARGET" bash/);
+
+          const schemaCompatibility = fs.readFileSync('deploy/backend-schema-compatibility', 'utf8').trim();
+          const migrationDirectories = fs.readdirSync('backend/prisma/migrations', { withFileTypes: true })
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name)
+            .sort();
+          const latestMigrationCompatibility = `migration-${migrationDirectories.at(-1).replaceAll('_', '-')}`;
+          assert.equal(schemaCompatibility, latestMigrationCompatibility, 'every migration must advance the conservative rollback boundary');
+          const selectRecovery = (...args) => execFileSync('bash', ['deploy/select-deployment-recovery.sh', ...args]).toString().trim();
+          assert.equal(selectRecovery('', '', '0', '0', '0'), 'unchanged');
+          assert.equal(selectRecovery('legacy', schemaCompatibility, '0', '0', '0', '1'), 'resume-previous');
+          assert.equal(selectRecovery('legacy', schemaCompatibility, '1', '0', '0'), 'maintenance');
+          assert.equal(selectRecovery('legacy', schemaCompatibility, '1', '1', '0'), 'roll-forward');
+          assert.equal(selectRecovery(schemaCompatibility, schemaCompatibility, '1', '1', '1'), 'compatible-rollback');
+          assert.equal(selectRecovery(schemaCompatibility, schemaCompatibility, '1', '1', '0'), 'unchanged');
+          assert.equal(selectRecovery(schemaCompatibility, schemaCompatibility, '1', '0', '0', '1'), 'maintenance');
+          assert.equal(spawnSync('bash', ['deploy/select-deployment-recovery.sh', 'bad value', schemaCompatibility, '1', '1', '1']).status, 64);
+
+          const backendRelease = fs.readFileSync('deploy/build-backend-release.sh', 'utf8');
+          assert.match(backendRelease, /BACKEND_SCHEMA_COMPATIBILITY_FILE is required when staging a release/);
+          assert.match(backendRelease, /A valid BACKEND_REQUIRED_SCHEMA_COMPATIBILITY is required for activation/);
+          assert.match(backendRelease, /Refusing incompatible backend activation/);
+          assert.match(backendRelease, /A valid BACKEND_REQUIRED_SCHEMA_COMPATIBILITY is required for rollback/);
+          assert.match(backendRelease, /Refusing incompatible backend rollback/);
+          assert.match(backendRelease, /Refusing incompatible backend roll-forward/);
+          assert.match(backendRelease, /\.schema-compatibility/);
+          const maintenanceApi = fs.readFileSync('deploy/maintenance-api.cjs', 'utf8');
+          assert.match(maintenanceApi, /response\.writeHead\(503/);
+          assert.match(maintenanceApi, /DEPLOYMENT_MAINTENANCE/);
+          const maintenancePort = await new Promise((resolve, reject) => {
+            const probe = net.createServer();
+            probe.once('error', reject);
+            probe.listen(0, '127.0.0.1', () => {
+              const address = probe.address();
+              probe.close((error) => error ? reject(error) : resolve(address.port));
+            });
+          });
+          const maintenanceProcess = spawn(process.execPath, ['deploy/maintenance-api.cjs'], {
+            env: { ...process.env, SERVER_API_PORT: String(maintenancePort) },
+            stdio: 'ignore'
+          });
+          try {
+            let maintenanceResponse;
+            for (let attempt = 0; attempt < 30; attempt += 1) {
+              try {
+                maintenanceResponse = await fetch(`http://127.0.0.1:${maintenancePort}/api/health/ready`);
+                break;
+              } catch {
+                await new Promise((resolve) => setTimeout(resolve, 50));
+              }
+            }
+            assert.equal(maintenanceResponse?.status, 503);
+            assert.equal(maintenanceResponse.headers.get('cache-control'), 'no-store');
+            assert.equal(maintenanceResponse.headers.get('retry-after'), '300');
+            assert.deepEqual(await maintenanceResponse.json(), {
+              ok: false,
+              ready: false,
+              maintenance: true,
+              code: 'DEPLOYMENT_MAINTENANCE'
+            });
+          } finally {
+            maintenanceProcess.kill('SIGTERM');
+          }
+          const operations = fs.readFileSync('deploy/configure-operations.sh', 'utf8');
+          assert.match(operations, /intitrade-maintenance\.service/);
+          assert.match(operations, /Conflicts=intitrade-api\.service/);
+          assert.match(operations, /ExecStartPre=\/bin\/bash .*verify-runtime-schema-compatibility\.sh/);
+          if (process.platform !== 'win32') {
+            const compatibilityFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'intitrade-compatibility-'));
+            const fixtureProject = path.join(compatibilityFixture, 'project');
+            const fixtureState = path.join(compatibilityFixture, 'state');
+            const fixtureRelease = path.join(fixtureProject, 'backend', 'runtime-current');
+            fs.mkdirSync(fixtureRelease, { recursive: true });
+            fs.mkdirSync(fixtureState, { recursive: true });
+            fs.writeFileSync(path.join(fixtureRelease, '.schema-compatibility'), `${schemaCompatibility}\n`);
+            fs.writeFileSync(path.join(fixtureState, 'schema-compatibility'), `${schemaCompatibility}\n`);
+            const compatibilityEnv = { ...process.env, PROJECT_DIR: fixtureProject, INTITRADE_DEPLOY_STATE_DIR: fixtureState };
+            assert.equal(spawnSync('bash', ['deploy/verify-runtime-schema-compatibility.sh'], { env: compatibilityEnv }).status, 0);
+            fs.writeFileSync(path.join(fixtureState, 'schema-compatibility'), 'legacy\n');
+            assert.equal(spawnSync('bash', ['deploy/verify-runtime-schema-compatibility.sh'], { env: compatibilityEnv }).status, 1);
+            fs.writeFileSync(path.join(fixtureState, 'schema-compatibility'), `${schemaCompatibility}\n`);
+            fs.writeFileSync(path.join(fixtureState, 'schema-compatibility.pending'), `${schemaCompatibility}\n`);
+            assert.equal(spawnSync('bash', ['deploy/verify-runtime-schema-compatibility.sh'], { env: compatibilityEnv }).status, 1);
+            fs.rmSync(compatibilityFixture, { recursive: true, force: true });
+          }
+          const frontendRelease = fs.readFileSync('deploy/build-frontend-release.sh', 'utf8');
+          assert.match(frontendRelease, /stamp_release "\$\{RELEASE_DIR\}\/index\.html" "\$\{GIT_SHA\}"/);
+          assert.match(frontendRelease, /name="intitrade-release" content="\$\{version\}"/);
+          const stampPrefix = '"${node_bin}" --eval \'\n';
+          const stampStart = frontendRelease.indexOf(stampPrefix);
+          const stampEnd = frontendRelease.indexOf("\n  '\n}", stampStart);
+          assert.ok(stampStart >= 0 && stampEnd > stampStart, 'frontend release stamper was not found');
+          const stampSource = frontendRelease.slice(stampStart + stampPrefix.length, stampEnd);
+          let stampedHtml = '';
+          Function('require', 'process', stampSource)(
+            (specifier) => {
+              assert.equal(specifier, 'node:fs');
+              return {
+                readFileSync: () => '<html><head><meta content="old" name="intitrade-release"></head><body></body></html>',
+                writeFileSync: (_file, value) => { stampedHtml = value; }
+              };
+            },
+            { env: { HTML_FILE: '/tmp/index.html', RELEASE_VERSION: 'abcdef123456' } }
+          );
+          assert.match(stampedHtml, /<meta name="intitrade-release" content="abcdef123456">/);
+          assert.doesNotMatch(stampedHtml, /content="old"/);
+          assert.equal(stampedHtml.match(/intitrade-release/g)?.length, 1);
+          const frontendValidation = rendered.split('\n').find((line) => line.includes('EXPECTED_FRONTEND_VERSION='));
+          const frontendValidationSource = frontendValidation?.match(/--eval '(.*)'$/)?.[1];
+          assert.ok(frontendValidationSource, 'rendered frontend release verifier was not found');
+          const verifyRenderedHtml = (html) => {
+            let exitCode = -1;
+            Function('require', 'process', frontendValidationSource)(
+              (specifier) => {
+                assert.equal(specifier, 'node:fs');
+                return { readFileSync: () => html };
+              },
+              {
+                env: {
+                  HTML_FILE: '/tmp/index.html',
+                  EXPECTED_ENTRY_ASSET: '/assets/index-new.js',
+                  EXPECTED_FRONTEND_VERSION: 'abcdef123456'
+                },
+                exit: (code) => { exitCode = code; }
+              }
+            );
+            return exitCode;
+          };
+          assert.equal(verifyRenderedHtml('<meta content="abcdef123456" name="intitrade-release"><script src="/assets/index-new.js"></script>'), 0);
+          assert.equal(verifyRenderedHtml('<meta content="old-release" name="intitrade-release"><script src="/assets/index-new.js"></script>'), 1);
+          assert.equal(verifyRenderedHtml('<meta content="abcdef123456" name="intitrade-release"><script src="/assets/index-old.js"></script>'), 1);
+          const productionSmoke = fs.readFileSync('.github/workflows/production-smoke.yml', 'utf8');
+          assert.match(productionSmoke, /test "\$frontend_version" = "\$deployed_version"/);
+          assert.match(productionSmoke, /::warning title=Production revision drift/);
+          assert.doesNotMatch(productionSmoke, /EXPECTED_VERSION:\s*\$\{\{\s*github\.sha\s*\}\}/);
+          assert.doesNotMatch(productionSmoke, /primary\.version !== \(process\.env\.EXPECTED_VERSION/);
           process.stdout.write(rendered);
           EOF
       - name: Install frontend dependencies

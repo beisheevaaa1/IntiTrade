@@ -67,4 +67,13 @@ test.describe("authentication UI", () => {
       await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
     }
   });
+
+  test("an authenticated student cannot mount the administrator route", async ({ page, api }) => {
+    api.authenticated = true;
+
+    await page.goto("/admin");
+
+    await expect(page).toHaveURL(/\/browse$/);
+    await expect(page.getByRole("heading", { name: "Admin Control Panel" })).toHaveCount(0);
+  });
 });

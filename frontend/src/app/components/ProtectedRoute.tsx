@@ -1,8 +1,14 @@
 import React from "react";
 import { Navigate, Outlet } from "react-router";
 import { useAuth } from "../../state/AuthContext";
+import type { Role } from "../../types";
 
-export function ProtectedRoute() {
+type ProtectedRouteProps = {
+  allowedRoles?: readonly Role[];
+  unauthorizedTo?: string;
+};
+
+export function ProtectedRoute({ allowedRoles, unauthorizedTo = "/" }: ProtectedRouteProps) {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -15,6 +21,10 @@ export function ProtectedRoute() {
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    return <Navigate to={unauthorizedTo} replace />;
   }
 
   return <Outlet />;

@@ -29,6 +29,23 @@ activate_release() {
   echo "Frontend release activated: ${release_dir}"
 }
 
+stamp_release() {
+  local html_file="$1"
+  local version="$2"
+  local node_bin
+  node_bin="$(command -v node)"
+  HTML_FILE="${html_file}" RELEASE_VERSION="${version}" "${node_bin}" --eval '
+    const fs = require("node:fs");
+    const htmlFile = process.env.HTML_FILE;
+    const version = process.env.RELEASE_VERSION;
+    let html = fs.readFileSync(htmlFile, "utf8");
+    html = html.replace(/<meta\b(?=[^>]*\bname\s*=\s*["\x27]intitrade-release["\x27])[^>]*>\s*/gi, "");
+    if (!/<\/head>/i.test(html)) throw new Error("Frontend index is missing </head>");
+    const marker = `  <meta name="intitrade-release" content="${version}">`;
+    fs.writeFileSync(htmlFile, html.replace(/<\/head>/i, `${marker}\n</head>`));
+  '
+}
+
 if [[ "${MODE}" == "activate" ]]; then
   [[ -s "${PENDING_FILE}" ]] || { echo "No staged frontend release" >&2; exit 1; }
   activate_release "$(<"${PENDING_FILE}")"
@@ -36,8 +53,14 @@ if [[ "${MODE}" == "activate" ]]; then
 fi
 
 if [[ "${MODE}" == "rollback" ]]; then
-  [[ -s "${PREVIOUS_FILE}" ]] || { echo "No previous frontend release is available" >&2; exit 1; }
-  previous="$(<"${PREVIOUS_FILE}")"
+  if [[ -n "${FRONTEND_ROLLBACK_TARGET:-}" ]]; then
+    previous="${FRONTEND_ROLLBACK_TARGET}"
+  else
+    [[ -s "${PREVIOUS_FILE}" ]] || { echo "No previous frontend release is available" >&2; exit 1; }
+    previous="$(<"${PREVIOUS_FILE}")"
+  fi
+  [[ "${previous}" == "${RELEASES_DIR}/"* || "${previous}" == "${FRONTEND_DIR}/dist" ]] \
+    || { echo "Previous frontend release is outside the managed release directories" >&2; exit 1; }
   [[ -s "${previous}/index.html" ]] || { echo "Previous frontend release is invalid" >&2; exit 1; }
   rm -f "${NEXT_LINK}"
   ln -s "${previous}" "${NEXT_LINK}"
@@ -78,6 +101,8 @@ else
 fi
 test -s "${RELEASE_DIR}/index.html"
 test -d "${RELEASE_DIR}/assets"
+stamp_release "${RELEASE_DIR}/index.html" "${GIT_SHA}"
+grep -Fq "name=\"intitrade-release\" content=\"${GIT_SHA}\"" "${RELEASE_DIR}/index.html"
 
 # Keep the previous release's hashed assets so already-open browser tabs can
 # finish loading lazy chunks after the atomic switch.

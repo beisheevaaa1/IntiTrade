@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
+import { lockMessageParticipants } from "../utils/messageLocks.js";
 
 const router = Router();
 
@@ -38,16 +40,32 @@ router.post("/blocks/:userId", requireAuth, async (req, res) => {
   if (!parsed.success || parsed.data === req.user!.id) return res.status(400).json({ message: "Invalid user" });
   const body = z.object({ reason: z.string().trim().min(3).max(300) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ message: "Please provide a reason for blocking this user" });
-  const block = await prisma.userBlock.upsert({
-    where: { blockerId_blockedId: { blockerId: req.user!.id, blockedId: parsed.data } },
-    update: { reason: body.data.reason },
-    create: { blockerId: req.user!.id, blockedId: parsed.data, reason: body.data.reason }
-  });
+  const blockedUser = await prisma.user.findUnique({ where: { id: parsed.data }, select: { id: true } });
+  if (!blockedUser) return res.status(404).json({ message: "User not found" });
+  let block;
+  try {
+    block = await prisma.$transaction(async (tx) => {
+      await lockMessageParticipants(tx, req.user!.id, parsed.data);
+      return tx.userBlock.upsert({
+        where: { blockerId_blockedId: { blockerId: req.user!.id, blockedId: parsed.data } },
+        update: { reason: body.data.reason },
+        create: { blockerId: req.user!.id, blockedId: parsed.data, reason: body.data.reason }
+      });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003") {
+      return res.status(404).json({ message: "User not found" });
+    }
+    throw error;
+  }
   res.status(201).json({ block });
 });
 
 router.delete("/blocks/:userId", requireAuth, async (req, res) => {
-  await prisma.userBlock.deleteMany({ where: { blockerId: req.user!.id, blockedId: req.params.userId } });
+  await prisma.$transaction(async (tx) => {
+    await lockMessageParticipants(tx, req.user!.id, req.params.userId);
+    await tx.userBlock.deleteMany({ where: { blockerId: req.user!.id, blockedId: req.params.userId } });
+  });
   res.status(204).send();
 });
 

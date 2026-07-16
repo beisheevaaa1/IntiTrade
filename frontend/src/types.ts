@@ -86,6 +86,43 @@ export type Listing = {
   transactions?: Transaction[];
 };
 
+/**
+ * Relationship APIs may intentionally return the last approved listing snapshot,
+ * or a redacted placeholder, after the live listing leaves the marketplace.
+ * Fields that are required on a public Listing can therefore be absent or null.
+ */
+export type PresentedListing = Partial<Omit<Listing,
+  | "id"
+  | "title"
+  | "description"
+  | "price"
+  | "type"
+  | "condition"
+  | "status"
+  | "location"
+  | "sellerId"
+  | "categoryId"
+  | "createdAt"
+  | "category"
+  | "images"
+>> & {
+  id: string;
+  title: string;
+  description?: string | null;
+  price?: string | null;
+  type?: ListingType | null;
+  condition?: ListingCondition | null;
+  status: ListingStatus;
+  location?: string | null;
+  sellerId?: string | null;
+  categoryId?: string | null;
+  createdAt?: string | null;
+  category?: Category | null;
+  images: ListingImage[];
+  isSnapshot?: boolean;
+  unavailable?: boolean;
+};
+
 export type Message = {
   id: string;
   body: string;
@@ -103,7 +140,7 @@ export type Conversation = {
   id: string;
   buyerId: string;
   sellerId: string;
-  listing: Listing;
+  listing: PresentedListing | null;
   buyer: Pick<User, "id" | "name" | "avatarUrl" | "lastActiveAt" | "showOnlineStatus">;
   seller: Pick<User, "id" | "name" | "avatarUrl" | "lastActiveAt" | "showOnlineStatus">;
   messages: Message[];
@@ -117,7 +154,7 @@ export type Report = {
   reason: string;
   details?: string;
   status: ReportStatus;
-  listing: Listing;
+  listing: PresentedListing & { seller?: Pick<User, "id" | "name" | "email"> };
   reporter: Pick<User, "id" | "name" | "email">;
 };
 
@@ -148,7 +185,7 @@ export type Transaction = {
   disputeReason?: string | null;
   review?: Review | null;
   createdAt: string;
-  listing?: Pick<Listing, "id" | "title" | "price">;
+  listing?: PresentedListing;
   buyer?: Pick<User, "id" | "name" | "email">;
   seller?: Pick<User, "id" | "name" | "email">;
 };

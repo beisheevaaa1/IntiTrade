@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { env } from "../env.js";
 import { prisma } from "../prisma.js";
+import { snapshotMediaReferences } from "../utils/snapshotMedia.js";
 
 const uploadDir = path.resolve(process.cwd(), "uploads");
 const ownedMediaPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}-[0-9a-f-]+\.(?:jpe?g|png|webp|gif|mp4|mov|webm|ogg)$/i;
@@ -28,7 +29,7 @@ async function main() {
   for (let offset = 0; offset < candidates.length; offset += 200) {
     const batch = candidates.slice(offset, offset + 200);
     const urls = batch.map((candidate) => candidate.url);
-    const [listingReferences, messageReferences, announcementReferences, avatarReferences] = await Promise.all([
+    const [listingReferences, messageReferences, announcementReferences, avatarReferences, historicalReferences] = await Promise.all([
       prisma.listingImage.findMany({ where: { url: { in: urls } }, select: { url: true } }),
       prisma.message.findMany({ where: { attachmentUrl: { in: urls } }, select: { attachmentUrl: true } }),
       prisma.announcement.findMany({
@@ -39,13 +40,15 @@ async function main() {
         },
         select: { imageUrl: true }
       }),
-      prisma.user.findMany({ where: { avatarUrl: { in: urls } }, select: { avatarUrl: true } })
+      prisma.user.findMany({ where: { avatarUrl: { in: urls } }, select: { avatarUrl: true } }),
+      snapshotMediaReferences(prisma, urls)
     ]);
     const referenced = new Set([
       ...listingReferences.map((item) => item.url),
       ...messageReferences.map((item) => item.attachmentUrl).filter((url): url is string => Boolean(url)),
       ...announcementReferences.map((item) => item.imageUrl).filter((url): url is string => Boolean(url)),
-      ...avatarReferences.map((item) => item.avatarUrl).filter((url): url is string => Boolean(url))
+      ...avatarReferences.map((item) => item.avatarUrl).filter((url): url is string => Boolean(url)),
+      ...historicalReferences
     ]);
     for (const candidate of batch) {
       if (referenced.has(candidate.url)) continue;

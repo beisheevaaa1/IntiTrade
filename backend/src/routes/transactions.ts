@@ -1,10 +1,17 @@
 import crypto from "node:crypto";
-import { ListingCondition, ListingStatus, ListingType, Prisma, Role, TransactionStatus } from "@prisma/client";
+import { ListingStatus, ListingType, Prisma, TransactionStatus } from "@prisma/client";
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth } from "../middleware/auth.js";
 import { prisma } from "../prisma.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
+import { createApprovedListingSnapshot, listingSnapshotInclude, presentHistoricalListing } from "../utils/listingSnapshot.js";
+import {
+  INVENTORY_HOLD_STATUSES,
+  lockListingInventory,
+  settleProductInventory,
+  transactionListingType
+} from "../utils/listingInventory.js";
 
 const router = Router();
 
@@ -21,10 +28,37 @@ class TransactionRequestError extends Error {
   }
 }
 
-function presentTransaction<T extends { buyerId: string; otpCode: string | null }>(transaction: T, viewerId: string) {
-  const { otpCode, ...safeTransaction } = transaction;
+function knownRequestError(error: unknown, code: string) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === code;
+}
+
+function normalizeTransactionDatabaseError(error: unknown) {
+  if (knownRequestError(error, "P2002")) {
+    return new TransactionRequestError(409, "An active reservation already exists for this buyer and listing");
+  }
+  if (knownRequestError(error, "P2003")) {
+    return new TransactionRequestError(409, "A referenced listing, account, or meetup point is no longer available");
+  }
+  if (knownRequestError(error, "P2004")) {
+    return new TransactionRequestError(409, "The inventory changed while this request was being processed");
+  }
+  if (knownRequestError(error, "P2025")) {
+    return new TransactionRequestError(409, "The transaction changed while this request was being processed");
+  }
+  return null;
+}
+
+function presentTransaction<T extends {
+  buyerId: string;
+  sellerId: string;
+  otpCode: string | null;
+  listingSnapshot: Prisma.JsonValue | null;
+  listing: { id: string; sellerId: string; status: ListingStatus; [key: string]: unknown };
+}>(transaction: T, viewerId: string) {
+  const { otpCode, listingSnapshot, listing, ...safeTransaction } = transaction;
   return {
     ...safeTransaction,
+    listing: presentHistoricalListing(listing, listingSnapshot),
     otpCode: transaction.buyerId === viewerId ? otpCode : undefined
   };
 }
@@ -34,7 +68,10 @@ async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => P
     try {
       return await prisma.$transaction(operation, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034" && attempt < 2) continue;
+      if (knownRequestError(error, "P2034")) {
+        if (attempt < 2) continue;
+        throw new TransactionRequestError(409, "The transaction changed concurrently. Please retry.");
+      }
       throw error;
     }
   }
@@ -42,7 +79,7 @@ async function runSerializable<T>(operation: (tx: Prisma.TransactionClient) => P
 }
 
 const transactionInclude = {
-  listing: { include: { images: true, category: true, meetupPoint: true } },
+  listing: { include: listingSnapshotInclude },
   buyer: { select: { id: true, name: true, avatarUrl: true } },
   seller: { select: { id: true, name: true, avatarUrl: true, sellerType: true } },
   meetupPoint: true,
@@ -68,46 +105,95 @@ router.post("/", requireAuth, async (req, res) => {
 
   const otpCode = crypto.randomInt(100000, 1000000).toString();
 
-  let transaction;
+  let reservation;
   try {
-    transaction = await runSerializable(async (tx) => {
-      const listing = await tx.listing.findUnique({ where: { id: parsed.data.listingId } });
-      if (!listing || listing.status !== ListingStatus.ACTIVE) throw new TransactionRequestError(404, "Listing is not available");
+    reservation = await runSerializable(async (tx) => {
+      await lockListingInventory(tx, parsed.data.listingId);
+      const listing = await tx.listing.findUnique({
+        where: { id: parsed.data.listingId },
+        include: listingSnapshotInclude
+      });
+      if (!listing) throw new TransactionRequestError(404, "Listing is not available");
       if (listing.sellerId === req.user!.id) throw new TransactionRequestError(400, "You cannot reserve your own listing");
+
+      const requestedQuantity = listing.type === ListingType.PRODUCT ? parsed.data.quantity : 1;
+      const requestedMeetupPointId = parsed.data.meetupPointId ?? null;
+      const existingReservations = await tx.transaction.findMany({
+        where: {
+          listingId: listing.id,
+          buyerId: req.user!.id,
+          status: { in: INVENTORY_HOLD_STATUSES }
+        },
+        include: transactionInclude,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 2
+      });
+      if (existingReservations.length > 1) {
+        throw new TransactionRequestError(409, "Multiple active reservations already exist. Please contact support.");
+      }
+      const existingReservation = existingReservations[0];
+      if (existingReservation) {
+        const isIdentical = existingReservation.status === TransactionStatus.RESERVED
+          && existingReservation.quantity === requestedQuantity
+          && (existingReservation.meetupPointId ?? null) === requestedMeetupPointId;
+        if (isIdentical) return { transaction: existingReservation, created: false };
+        throw new TransactionRequestError(409, "You already have an active reservation for this listing");
+      }
+
+      if (listing.status !== ListingStatus.ACTIVE) throw new TransactionRequestError(404, "Listing is not available");
+
+      if (requestedMeetupPointId) {
+        const meetupPoint = await tx.meetupPoint.findUnique({
+          where: { id: requestedMeetupPointId },
+          select: { id: true, isActive: true }
+        });
+        if (!meetupPoint?.isActive) throw new TransactionRequestError(400, "Meetup point is not available");
+      }
 
       if (listing.type === ListingType.PRODUCT) {
         const reserved = await tx.transaction.aggregate({
-          where: { listingId: listing.id, status: TransactionStatus.RESERVED },
+          where: { listingId: listing.id, status: { in: INVENTORY_HOLD_STATUSES } },
           _sum: { quantity: true }
         });
         const available = listing.quantity - (reserved._sum.quantity ?? 0);
-        if (parsed.data.quantity > available) {
+        if (requestedQuantity > available) {
           throw new TransactionRequestError(409, `Only ${Math.max(0, available)} item(s) are available`);
         }
       }
 
-      return tx.transaction.create({
+      const transaction = await tx.transaction.create({
         data: {
           listingId: listing.id,
+          listingSnapshot: createApprovedListingSnapshot(listing),
           buyerId: req.user!.id,
           sellerId: listing.sellerId,
           price: listing.price,
-          quantity: listing.type === ListingType.PRODUCT ? parsed.data.quantity : 1,
-          meetupPointId: parsed.data.meetupPointId,
+          quantity: requestedQuantity,
+          meetupPointId: requestedMeetupPointId,
           otpCode
         },
         include: transactionInclude
       });
+      await tx.notification.create({
+        data: {
+          userId: transaction.sellerId,
+          type: "RESERVATION_CREATED",
+          payload: JSON.stringify({ transactionId: transaction.id, listingId: transaction.listingId })
+        }
+      });
+      return { transaction, created: true };
     });
   } catch (error) {
     if (error instanceof TransactionRequestError) return res.status(error.status).json({ message: error.message });
+    const normalized = normalizeTransactionDatabaseError(error);
+    if (normalized) return res.status(normalized.status).json({ message: normalized.message });
     throw error;
   }
 
-  await prisma.notification.create({
-    data: { userId: transaction.sellerId, type: "RESERVATION_CREATED", payload: JSON.stringify({ transactionId: transaction.id, listingId: transaction.listingId }) }
+  res.status(reservation.created ? 201 : 200).json({
+    transaction: presentTransaction(reservation.transaction, req.user!.id),
+    created: reservation.created
   });
-  res.status(201).json({ transaction: presentTransaction(transaction, req.user!.id) });
 });
 
 router.patch("/:id/status", requireAuth, transactionUpdateRateLimit, async (req, res) => {
@@ -136,6 +222,16 @@ router.patch("/:id/status", requireAuth, transactionUpdateRateLimit, async (req,
   let transaction;
   try {
     transaction = await runSerializable(async (tx) => {
+      await lockListingInventory(tx, existing.listingId);
+      const reservedListingType = parsed.data.status === "COMPLETED"
+        ? transactionListingType(existing.listingSnapshot, existing.listingId)
+        : null;
+      if (parsed.data.status === "COMPLETED" && reservedListingType === null) {
+        throw new TransactionRequestError(
+          409,
+          "Reservation inventory evidence is incomplete. Ask an administrator to resolve it."
+        );
+      }
       const statusUpdate = await tx.transaction.updateMany({
         where: { id: existing.id, status: TransactionStatus.RESERVED },
         data: {
@@ -147,28 +243,28 @@ router.patch("/:id/status", requireAuth, transactionUpdateRateLimit, async (req,
       });
       if (statusUpdate.count !== 1) throw new TransactionRequestError(409, "This transaction is already closed");
 
-      if (parsed.data.status === "COMPLETED" && existing.listing.type === ListingType.PRODUCT) {
-        const quantityUpdate = await tx.listing.updateMany({
-          where: { id: existing.listingId, quantity: { gte: existing.quantity } },
-          data: { quantity: { decrement: existing.quantity } }
-        });
-        if (quantityUpdate.count !== 1) throw new TransactionRequestError(409, "Listing stock changed. Please retry the handoff.");
-        const listing = await tx.listing.findUniqueOrThrow({ where: { id: existing.listingId }, select: { quantity: true } });
-        if (listing.quantity === 0) {
-          await tx.listing.update({ where: { id: existing.listingId }, data: { status: ListingStatus.SOLD } });
-        }
+      if (parsed.data.status === "COMPLETED" && reservedListingType === ListingType.PRODUCT) {
+        const settled = await settleProductInventory(tx, existing.listingId, existing.quantity);
+        if (!settled) throw new TransactionRequestError(409, "Listing stock changed. Please retry the handoff.");
       }
 
-      return tx.transaction.findUniqueOrThrow({ where: { id: existing.id }, include: transactionInclude });
+      const updatedTransaction = await tx.transaction.findUniqueOrThrow({ where: { id: existing.id }, include: transactionInclude });
+      const recipientId = existing.buyerId === req.user!.id ? existing.sellerId : existing.buyerId;
+      await tx.notification.create({
+        data: {
+          userId: recipientId,
+          type: `TRANSACTION_${parsed.data.status}`,
+          payload: JSON.stringify({ transactionId: updatedTransaction.id, listingId: updatedTransaction.listingId })
+        }
+      });
+      return updatedTransaction;
     });
   } catch (error) {
     if (error instanceof TransactionRequestError) return res.status(error.status).json({ message: error.message });
+    const normalized = normalizeTransactionDatabaseError(error);
+    if (normalized) return res.status(normalized.status).json({ message: normalized.message });
     throw error;
   }
-  const recipientId = existing.buyerId === req.user!.id ? existing.sellerId : existing.buyerId;
-  await prisma.notification.create({
-    data: { userId: recipientId, type: `TRANSACTION_${parsed.data.status}`, payload: JSON.stringify({ transactionId: transaction.id, listingId: transaction.listingId }) }
-  });
   res.json({ transaction: presentTransaction(transaction, req.user!.id) });
 });
 
@@ -190,27 +286,46 @@ router.post("/messages/:messageId/accept-offer", requireAuth, async (req, res) =
     return res.status(409).json({ message: "This offer has already been resolved" });
   }
 
-  const result = await prisma.$transaction(async (tx) => {
-    const resolved = await tx.message.updateMany({
-      where: { id: message.id, OR: [{ offerStatus: null }, { offerStatus: "PENDING" }] },
-      data: { offerStatus: "ACCEPTED" }
-    });
-    if (resolved.count !== 1) return null;
-
-    const updatedMessage = await tx.message.findUniqueOrThrow({ where: { id: message.id } });
-    const activeTransaction = await tx.transaction.findFirst({
-      where: {
-        listingId: message.conversation.listingId,
-        buyerId: message.conversation.buyerId,
-        sellerId: message.conversation.sellerId,
-        status: TransactionStatus.RESERVED
+  let result;
+  try {
+    result = await runSerializable(async (tx) => {
+      await lockListingInventory(tx, message.conversation.listingId);
+      const activeTransactions = await tx.transaction.findMany({
+        where: {
+          listingId: message.conversation.listingId,
+          buyerId: message.conversation.buyerId,
+          sellerId: message.conversation.sellerId,
+          status: { in: INVENTORY_HOLD_STATUSES }
+        },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        take: 2
+      });
+      if (activeTransactions.length > 1) {
+        throw new TransactionRequestError(409, "Multiple active reservations exist. Resolve them before accepting an offer.");
       }
+      if (activeTransactions[0]?.status === TransactionStatus.DISPUTED) {
+        throw new TransactionRequestError(409, "Resolve the disputed transaction before accepting an offer.");
+      }
+
+      const resolved = await tx.message.updateMany({
+        where: { id: message.id, OR: [{ offerStatus: null }, { offerStatus: "PENDING" }] },
+        data: { offerStatus: "ACCEPTED" }
+      });
+      if (resolved.count !== 1) return null;
+
+      const updatedMessage = await tx.message.findUniqueOrThrow({ where: { id: message.id } });
+      const activeTransaction = activeTransactions[0];
+      const updatedTransaction = activeTransaction
+        ? await tx.transaction.update({ where: { id: activeTransaction.id }, data: { price: message.offerAmount! }, include: transactionInclude })
+        : null;
+      return { updatedMessage, updatedTransaction };
     });
-    const updatedTransaction = activeTransaction
-      ? await tx.transaction.update({ where: { id: activeTransaction.id }, data: { price: message.offerAmount! }, include: transactionInclude })
-      : null;
-    return { updatedMessage, updatedTransaction };
-  });
+  } catch (error) {
+    if (error instanceof TransactionRequestError) return res.status(error.status).json({ message: error.message });
+    const normalized = normalizeTransactionDatabaseError(error);
+    if (normalized) return res.status(normalized.status).json({ message: normalized.message });
+    throw error;
+  }
   if (!result) return res.status(409).json({ message: "This offer has already been resolved" });
   const { updatedMessage, updatedTransaction } = result;
 
@@ -238,12 +353,19 @@ router.post("/messages/:messageId/decline-offer", requireAuth, async (req, res) 
     return res.status(409).json({ message: "This offer has already been resolved" });
   }
 
-  const resolved = await prisma.message.updateMany({
-    where: { id: message.id, OR: [{ offerStatus: null }, { offerStatus: "PENDING" }] },
-    data: { offerStatus: "DECLINED" }
-  });
-  if (resolved.count !== 1) return res.status(409).json({ message: "This offer has already been resolved" });
-  const updatedMessage = await prisma.message.findUniqueOrThrow({ where: { id: message.id } });
+  let updatedMessage;
+  try {
+    const resolved = await prisma.message.updateMany({
+      where: { id: message.id, OR: [{ offerStatus: null }, { offerStatus: "PENDING" }] },
+      data: { offerStatus: "DECLINED" }
+    });
+    if (resolved.count !== 1) return res.status(409).json({ message: "This offer has already been resolved" });
+    updatedMessage = await prisma.message.findUniqueOrThrow({ where: { id: message.id } });
+  } catch (error) {
+    const normalized = normalizeTransactionDatabaseError(error);
+    if (normalized) return res.status(normalized.status).json({ message: normalized.message });
+    throw error;
+  }
 
   res.json({ message: updatedMessage });
 });
@@ -257,25 +379,34 @@ router.post("/:id/review", requireAuth, async (req, res) => {
 
   let review;
   try {
-    review = await prisma.review.create({
-      data: {
-        transactionId: transaction.id,
-        reviewerId: req.user!.id,
-        revieweeId: transaction.sellerId,
-        rating: parsed.data.rating,
-        comment: parsed.data.comment
-      },
-      include: { reviewer: { select: { id: true, name: true, avatarUrl: true } } }
+    review = await prisma.$transaction(async (tx) => {
+      const created = await tx.review.create({
+        data: {
+          transactionId: transaction.id,
+          reviewerId: req.user!.id,
+          revieweeId: transaction.sellerId,
+          rating: parsed.data.rating,
+          comment: parsed.data.comment
+        },
+        include: { reviewer: { select: { id: true, name: true, avatarUrl: true } } }
+      });
+      await tx.notification.create({
+        data: {
+          userId: transaction.sellerId,
+          type: "REVIEW_RECEIVED",
+          payload: JSON.stringify({ reviewId: created.id, transactionId: transaction.id })
+        }
+      });
+      return created;
     });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    if (knownRequestError(error, "P2002")) {
       return res.status(409).json({ message: "This transaction has already been reviewed" });
     }
+    const normalized = normalizeTransactionDatabaseError(error);
+    if (normalized) return res.status(normalized.status).json({ message: normalized.message });
     throw error;
   }
-  await prisma.notification.create({
-    data: { userId: transaction.sellerId, type: "REVIEW_RECEIVED", payload: JSON.stringify({ reviewId: review.id, transactionId: transaction.id }) }
-  });
   res.status(201).json({ review });
 });
 

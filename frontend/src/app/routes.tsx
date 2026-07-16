@@ -36,9 +36,14 @@ export const router = createBrowserRouter([
           { path: "edit-listing/:id", lazy: lazyCreateListing },
           { path: "inbox", lazy: lazyInbox },
           { path: "dashboard", lazy: lazyDashboard },
-          { path: "admin", lazy: lazyAdmin },
           { path: "wishlist", lazy: lazyWishlist },
           { path: "support", lazy: lazySupport }
+        ]
+      },
+      {
+        element: <ProtectedRoute allowedRoles={["ADMIN"]} unauthorizedTo="/browse" />,
+        children: [
+          { path: "admin", lazy: lazyAdmin }
         ]
       }
     ]

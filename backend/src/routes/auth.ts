@@ -11,6 +11,7 @@ import { sanitizeUser, signAccessToken } from "../utils/auth.js";
 import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, normalizePhone } from "../utils/validation.js";
 import { clearSessionCookie, setSessionCookie } from "../utils/sessionCookie.js";
 import { isOwnedImageUploadUrl } from "../utils/uploadOwnership.js";
+import { lockMessageAccounts } from "../utils/messageLocks.js";
 
 const router = Router();
 const allowedEmailDomains = getAllowedEmailDomains(env.ALLOWED_EMAIL_DOMAINS, env.ALLOWED_EMAIL_DOMAIN);
@@ -223,7 +224,15 @@ router.patch("/profile", requireAuth, async (req, res) => {
   }
 
   try {
-    const updated = await prisma.user.update({ where: { id: req.user!.id }, data: parsed.data });
+    const changesAutoReply = parsed.data.autoReplyEnabled !== undefined
+      || parsed.data.autoReplyMessage !== undefined
+      || parsed.data.autoReplyDelay !== undefined;
+    const updated = changesAutoReply
+      ? await prisma.$transaction(async (tx) => {
+        await lockMessageAccounts(tx, req.user!.id);
+        return tx.user.update({ where: { id: req.user!.id }, data: parsed.data });
+      })
+      : await prisma.user.update({ where: { id: req.user!.id }, data: parsed.data });
     res.json({ user: sanitizeUser(updated) });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {

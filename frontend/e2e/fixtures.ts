@@ -46,10 +46,14 @@ type JsonObject = Record<string, unknown>;
 export type MockApiState = {
   listingQueries: URLSearchParams[];
   registrationRequests: JsonObject[];
+  profileRequests: JsonObject[];
   registerStatus: number;
   registerResponse: JsonObject;
   authenticated: boolean;
   adminAuthenticated: boolean;
+  conversations: JsonObject[];
+  favorites: JsonObject[];
+  favoriteDeletes: string[];
   supportRequests: JsonObject[];
   unhandledRequests: string[];
 };
@@ -76,10 +80,14 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
   const state: MockApiState = {
     listingQueries: [],
     registrationRequests: [],
+    profileRequests: [],
     registerStatus: 422,
     registerResponse: { message: "Mock registration rejected" },
     authenticated: false,
     adminAuthenticated: false,
+    conversations: [],
+    favorites: [],
+    favoriteDeletes: [],
     supportRequests: [],
     unhandledRequests: [],
   };
@@ -118,7 +126,25 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
     }
 
     if (method === "GET" && path === "/conversations" && state.authenticated) {
-      await json(route, 200, { conversations: [] });
+      await json(route, 200, { conversations: state.conversations });
+      return;
+    }
+
+    if (method === "PATCH" && /^\/conversations\/[^/]+\/read$/.test(path) && state.authenticated) {
+      await route.fulfill({ status: 204, headers: corsHeaders(route) });
+      return;
+    }
+
+    if (method === "GET" && path === "/favorites" && state.authenticated) {
+      await json(route, 200, { favorites: state.favorites });
+      return;
+    }
+
+    if (method === "DELETE" && path.startsWith("/favorites/") && state.authenticated) {
+      const listingId = decodeURIComponent(path.slice("/favorites/".length));
+      state.favoriteDeletes.push(listingId);
+      state.favorites = state.favorites.filter((favorite) => favorite.listingId !== listingId);
+      await route.fulfill({ status: 204, headers: corsHeaders(route) });
       return;
     }
 
@@ -199,6 +225,13 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
     if (method === "POST" && path === "/auth/register") {
       state.registrationRequests.push((request.postDataJSON() || {}) as JsonObject);
       await json(route, state.registerStatus, state.registerResponse);
+      return;
+    }
+
+    if (method === "PATCH" && path === "/auth/profile" && state.authenticated) {
+      const payload = (request.postDataJSON() || {}) as JsonObject;
+      state.profileRequests.push(payload);
+      await json(route, 200, { user: { id: "user-e2e-1", ...payload } });
       return;
     }
 

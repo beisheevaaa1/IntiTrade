@@ -7,6 +7,8 @@ import { ListingStatus, Prisma, TransactionStatus } from "@prisma/client";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import { isOwnedUploadUrl } from "../utils/uploadOwnership.js";
 import { getIo } from "../socket.js";
+import { createApprovedListingSnapshot, listingSnapshotInclude, presentRelatedListing } from "../utils/listingSnapshot.js";
+import { lockConversationMessages, lockMessageParticipants } from "../utils/messageLocks.js";
 
 const router = Router();
 
@@ -25,6 +27,7 @@ const conversationInclude = {
   listing: {
     include: {
       images: true,
+      category: true,
       meetupPoint: true
     }
   },
@@ -78,16 +81,24 @@ async function getReservations(conversations: Array<{ listingId: string; buyerId
   );
 }
 
-function attachReservation<Conversation extends { listing: object; listingId: string; buyerId: string; sellerId: string }>(
+function attachReservation<Conversation extends {
+  listing: { id: string; sellerId: string; status: ListingStatus; [key: string]: unknown };
+  listingSnapshot: Prisma.JsonValue | null;
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+}>(
   conversation: Conversation,
   reservations: Map<string, Reservation>,
   viewerId: string
 ) {
   const transaction = reservations.get(reservationKey(conversation.listingId, conversation.buyerId, conversation.sellerId));
+  const { listing, listingSnapshot, ...safeConversation } = conversation;
+  const visibleListing = presentRelatedListing(listing, listingSnapshot, conversation.sellerId === viewerId);
   return {
-    ...conversation,
+    ...safeConversation,
     listing: {
-      ...conversation.listing,
+      ...visibleListing,
       transactions: transaction ? [presentReservation(transaction, viewerId)] : []
     }
   };
@@ -127,7 +138,13 @@ router.post("/", requireAuth, async (req, res) => {
   const parsed = z.object({ listingId: z.string().uuid() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Listing id is required" });
 
-  const listing = await prisma.listing.findUnique({ where: { id: parsed.data.listingId }, include: { seller: { select: { allowMessages: true } } } });
+  const listing = await prisma.listing.findUnique({
+    where: { id: parsed.data.listingId },
+    include: {
+      ...listingSnapshotInclude,
+      seller: { select: { allowMessages: true } }
+    }
+  });
   if (!listing || listing.status !== ListingStatus.ACTIVE) return res.status(404).json({ message: "Listing not found" });
   if (listing.sellerId === req.user!.id) return res.status(400).json({ message: "You cannot start a conversation with yourself" });
   if (!listing.seller.allowMessages) return res.status(403).json({ message: "This seller is not accepting new messages" });
@@ -156,7 +173,12 @@ router.post("/", requireAuth, async (req, res) => {
   const conversation = await prisma.conversation.upsert({
     where: { listingId_buyerId_sellerId: { listingId: listing.id, buyerId: req.user!.id, sellerId: listing.sellerId } },
     update: {},
-    create: { listingId: listing.id, buyerId: req.user!.id, sellerId: listing.sellerId },
+    create: {
+      listingId: listing.id,
+      listingSnapshot: createApprovedListingSnapshot(listing),
+      buyerId: req.user!.id,
+      sellerId: listing.sellerId
+    },
     include: conversationInclude
   });
   const reservations = await getReservations([conversation]);
@@ -220,23 +242,30 @@ router.post("/:id/messages", requireAuth, messageRateLimit, async (req, res) => 
     return res.status(403).json({ message: "Only the buyer can make an offer" });
   }
   const otherUserId = conversation.buyerId === req.user!.id ? conversation.sellerId : conversation.buyerId;
-  const blocked = await prisma.userBlock.findFirst({
-    where: { OR: [{ blockerId: req.user!.id, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: req.user!.id }] }
-  });
-  if (blocked) return res.status(403).json({ message: "Messaging is unavailable between these accounts" });
+  const message = await prisma.$transaction(async (tx) => {
+    await lockMessageParticipants(tx, req.user!.id, otherUserId);
+    await lockConversationMessages(tx, conversation.id);
+    const blocked = await tx.userBlock.findFirst({
+      where: { OR: [{ blockerId: req.user!.id, blockedId: otherUserId }, { blockerId: otherUserId, blockedId: req.user!.id }] },
+      select: { id: true }
+    });
+    if (blocked) return null;
 
-  const message = await prisma.message.create({
-    data: {
-      conversationId: conversation.id,
-      senderId: req.user!.id,
-      body: parsed.data.body,
-      attachmentUrl: parsed.data.attachmentUrl,
-      offerAmount: parsed.data.offerAmount,
-      offerStatus: parsed.data.offerAmount ? "PENDING" : undefined
-    },
-    include: { sender: { select: { id: true, name: true } } }
+    const created = await tx.message.create({
+      data: {
+        conversationId: conversation.id,
+        senderId: req.user!.id,
+        body: parsed.data.body,
+        attachmentUrl: parsed.data.attachmentUrl,
+        offerAmount: parsed.data.offerAmount,
+        offerStatus: parsed.data.offerAmount ? "PENDING" : undefined
+      },
+      include: { sender: { select: { id: true, name: true } } }
+    });
+    await tx.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+    return created;
   });
-  await prisma.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+  if (!message) return res.status(403).json({ message: "Messaging is unavailable between these accounts" });
 
   const io = getIo();
   io?.to(conversation.id).emit("message:new", message);
@@ -260,7 +289,8 @@ router.patch("/:id/read", requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
-// Endpoint to change the attached active listing for a conversation
+// Select another seller listing without relabelling the existing message history.
+// A conversation is permanently scoped to the listing that created it.
 router.patch("/:id/listing", requireAuth, async (req, res) => {
   const parsed = z.object({ listingId: z.string().uuid() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Valid Listing ID is required" });
@@ -272,7 +302,8 @@ router.patch("/:id/listing", requireAuth, async (req, res) => {
 
   // Verify that the listing actually exists
   const listing = await prisma.listing.findUnique({
-    where: { id: parsed.data.listingId }
+    where: { id: parsed.data.listingId },
+    include: listingSnapshotInclude
   });
   if (!listing || listing.status !== ListingStatus.ACTIVE) return res.status(404).json({ message: "Listing not found" });
 
@@ -281,15 +312,36 @@ router.patch("/:id/listing", requireAuth, async (req, res) => {
     return res.status(400).json({ message: "This listing does not belong to the seller of this conversation" });
   }
 
-  // Update the conversation's active listing
-  const updatedConv = await prisma.conversation.update({
-    where: { id: conversation.id },
-    data: { listingId: listing.id },
+  const targetKey = {
+    listingId: listing.id,
+    buyerId: conversation.buyerId,
+    sellerId: conversation.sellerId
+  };
+  const existingTarget = await prisma.conversation.findUnique({
+    where: { listingId_buyerId_sellerId: targetKey },
+    select: { id: true }
+  });
+  if (!existingTarget) {
+    void prisma.listing.update({
+      where: { id: listing.id },
+      data: { interestCount: { increment: 1 } }
+    }).catch(() => undefined);
+  }
+
+  const selectedConversation = await prisma.conversation.upsert({
+    where: { listingId_buyerId_sellerId: targetKey },
+    update: {},
+    create: {
+      listingId: listing.id,
+      listingSnapshot: createApprovedListingSnapshot(listing),
+      buyerId: conversation.buyerId,
+      sellerId: conversation.sellerId
+    },
     include: conversationInclude
   });
-  const reservations = await getReservations([updatedConv]);
+  const reservations = await getReservations([selectedConversation]);
 
-  res.json({ conversation: attachReservation(updatedConv, reservations, req.user!.id) });
+  res.json({ conversation: attachReservation(selectedConversation, reservations, req.user!.id) });
 });
 
 export default router;
