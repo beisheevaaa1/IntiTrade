@@ -36,6 +36,9 @@ export function requestContext(req: Request, res: Response, next: NextFunction) 
 
 export const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
   const requestId = String(res.locals.requestId ?? randomUUID());
+  const databaseError = error && typeof error === "object" && !Array.isArray(error)
+    ? error as { code?: unknown; meta?: unknown }
+    : null;
   recordError({
     requestId,
     method: req.method,
@@ -50,6 +53,8 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
     method: req.method,
     path: req.path,
     errorType: error instanceof Error ? error.name : "UnknownError",
+    errorCode: typeof databaseError?.code === "string" ? databaseError.code : undefined,
+    errorMeta: databaseError?.meta,
     at: new Date().toISOString()
   }));
   if (res.headersSent) return next(error);
