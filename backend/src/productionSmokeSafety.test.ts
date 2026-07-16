@@ -44,6 +44,11 @@ describe("production smoke safety invariants", () => {
     expect(source).toContain("tokenVersion: { increment: 1 }");
   });
 
+  it("releases temporary reservation holds before archiving their listings", () => {
+    ordered("await tx.transaction.updateMany", "await tx.listing.updateMany");
+    expect(source).toContain("TransactionStatus.CANCELLED");
+  });
+
   it("verifies every relationship table after cleanup", () => {
     for (const model of [
       "emailVerificationToken.count",

@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import bcrypt from "bcryptjs";
-import { AnnouncementStatus, ListingStatus, Role, WantAdStatus } from "@prisma/client";
+import { AnnouncementStatus, ListingStatus, Role, TransactionStatus, WantAdStatus } from "@prisma/client";
 import { env } from "../env.js";
 import { prisma } from "../prisma.js";
 import { signAccessToken } from "../utils/auth.js";
@@ -477,24 +477,33 @@ async function freezeTemporaryResources(tracked: TrackedResources) {
       avatarUrl: null
     }
   });
-  await prisma.$transaction([
-    prisma.listing.updateMany({
+  await prisma.$transaction(async (tx) => {
+    // A reservation must be released before archiving its listing: the
+    // database deliberately rejects closing a listing with an active hold.
+    await tx.transaction.updateMany({
+      where: {
+        OR: [{ buyerId: { in: userIds } }, { sellerId: { in: userIds } }],
+        status: { in: [TransactionStatus.RESERVED, TransactionStatus.DISPUTED] }
+      },
+      data: { status: TransactionStatus.CANCELLED, cancelledAt: new Date() }
+    });
+    await tx.listing.updateMany({
       where: { sellerId: { in: userIds } },
       data: { status: ListingStatus.ARCHIVED, showPhone: false }
-    }),
-    prisma.announcement.updateMany({
+    });
+    await tx.announcement.updateMany({
       where: { authorId: { in: userIds } },
       data: { status: AnnouncementStatus.EXPIRED, imageUrl: null }
-    }),
-    prisma.wantAd.updateMany({
+    });
+    await tx.wantAd.updateMany({
       where: { userId: { in: userIds } },
       data: { status: WantAdStatus.CLOSED }
-    }),
-    prisma.supportTicket.updateMany({
+    });
+    await tx.supportTicket.updateMany({
       where: { userId: { in: userIds } },
       data: { status: "CLOSED", resolvedAt: new Date() }
-    })
-  ]);
+    });
+  });
 }
 
 async function findForeignInteractions(tracked: TrackedResources): Promise<ForeignInteractions> {
