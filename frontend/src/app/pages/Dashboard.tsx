@@ -120,6 +120,7 @@ export function Dashboard() {
   const soldListings = listings.filter(l => l.status === "SOLD");
   const totalViews = listings.reduce((sum, item) => sum + (item.viewsCount || 0), 0);
   const totalInterests = listings.reduce((sum, item) => sum + (item.interestCount || 0), 0);
+  const profileSubtitle = user?.role === "ADMIN" ? "Administrator" : user?.faculty || "Student";
 
   if (loading) {
     return (
@@ -143,7 +144,7 @@ export function Dashboard() {
             </Avatar>
             <div className="min-w-0 flex-1">
               <h3 className="font-bold text-sm text-foreground truncate" title={user?.name}>{user?.name}</h3>
-              <p className="text-xs text-muted-foreground truncate">{user?.faculty || "Student"}</p>
+              <p className="text-xs text-muted-foreground truncate">{profileSubtitle}</p>
               <p className="text-[11px] text-gray-500 truncate mt-0.5" title={user?.email}>{user?.email}</p>
             </div>
           </div>

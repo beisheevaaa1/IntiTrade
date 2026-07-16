@@ -106,4 +106,16 @@ test.describe("authentication UI", () => {
     await expect(page).toHaveURL(/\/browse$/);
     await expect(page.getByRole("heading", { name: "Admin Control Panel" })).toHaveCount(0);
   });
+
+  test("dashboard labels admin accounts as administrators", async ({ page, api }, testInfo) => {
+    test.skip(testInfo.project.name.includes("mobile"), "The dashboard profile summary is hidden in the mobile layout.");
+    api.authenticated = true;
+    api.adminAuthenticated = true;
+
+    await page.goto("/dashboard");
+
+    await expect(page.getByText("Admin Tester")).toBeVisible();
+    await expect(page.getByText("Administrator")).toBeVisible();
+    await expect(page.getByText("admin@student.newinti.edu.my")).toBeVisible();
+  });
 });

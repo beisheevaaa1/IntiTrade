@@ -118,7 +118,7 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
         await json(route, 401, { message: "Authentication required" });
         return;
       }
-      await json(route, 200, { user: { id: "user-e2e-1", name: state.adminAuthenticated ? "Admin Tester" : "Support Tester", email: "support@example.test", role: state.adminAuthenticated ? "ADMIN" : "STUDENT", isBlocked: false, isVerified: false } });
+      await json(route, 200, { user: { id: "user-e2e-1", name: state.adminAuthenticated ? "Admin Tester" : "Support Tester", email: state.adminAuthenticated ? "admin@student.newinti.edu.my" : "support@example.test", role: state.adminAuthenticated ? "ADMIN" : "STUDENT", isBlocked: false, isVerified: false } });
       return;
     }
 
@@ -129,6 +129,21 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
 
     if (method === "GET" && path === "/conversations" && state.authenticated) {
       await json(route, 200, { conversations: state.conversations });
+      return;
+    }
+
+    if (method === "GET" && path === "/listings/mine" && state.authenticated) {
+      await json(route, 200, { listings: [] });
+      return;
+    }
+
+    if (method === "GET" && path === "/transactions" && state.authenticated) {
+      await json(route, 200, { transactions: [] });
+      return;
+    }
+
+    if (method === "GET" && path === "/community/blocks" && state.authenticated) {
+      await json(route, 200, { blocks: [] });
       return;
     }
 
