@@ -83,6 +83,16 @@ chmod 755 /var/lib/intitrade-build
 chown "root:${APP_GROUP}" "${PROJECT_DIR}/backend/.env"
 chmod 640 "${PROJECT_DIR}/backend/.env"
 
+# The maintenance responder runs as the unprivileged application account. The
+# deployment worktree is root-owned, so grant its group read access to this
+# one non-sensitive script explicitly instead of loosening project ownership.
+if [[ ! -f "${PROJECT_DIR}/deploy/maintenance-api.cjs" ]]; then
+  echo "Maintenance responder is missing from ${PROJECT_DIR}/deploy" >&2
+  exit 1
+fi
+chown "root:${APP_GROUP}" "${PROJECT_DIR}/deploy/maintenance-api.cjs"
+chmod 640 "${PROJECT_DIR}/deploy/maintenance-api.cjs"
+
 cat > /etc/systemd/system/intitrade-maintenance.service <<EOF
 [Unit]
 Description=IntiTrade explicit deployment maintenance responder
