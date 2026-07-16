@@ -8,10 +8,13 @@ import { useAuth } from "../../state/AuthContext";
 export function VerifyEmail() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const { verifyEmail } = useAuth();
+  const { verifyEmail, resendVerification } = useAuth();
   const [token, setToken] = useState(params.get("token") ?? "");
+  const [email, setEmail] = useState(params.get("email") ?? "");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const tokenParam = params.get("token");
@@ -27,6 +30,7 @@ export function VerifyEmail() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setMessage("");
     setLoading(true);
     try {
       await verifyEmail(token);
@@ -35,6 +39,21 @@ export function VerifyEmail() {
       setError(err.response?.data?.message || "Verification failed. Check your token.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    setResending(true);
+    try {
+      await resendVerification(email);
+      setMessage("If this account needs verification, a new email has been sent.");
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Could not send verification email. Try again later.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -60,6 +79,11 @@ export function VerifyEmail() {
         {error && (
           <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100 text-center">
             {error}
+          </div>
+        )}
+        {message && (
+          <div className="bg-green-50 text-green-700 p-3 rounded-xl text-sm border border-green-100 text-center">
+            {message}
           </div>
         )}
         
@@ -99,10 +123,41 @@ export function VerifyEmail() {
         </form>
 
         <div className="mt-6 border-t border-border pt-6 text-center">
-          <p className="text-sm text-gray-600">
-            Didn't receive a code?{" "}
+          <form className="space-y-3 text-left" onSubmit={handleResend}>
+            <label htmlFor="verification-email" className="block text-sm font-medium text-gray-700">
+              INTI account email
+            </label>
+            <Input
+              id="verification-email"
+              name="verification-email"
+              type="text"
+              inputMode="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="i00008872@student.newinti.edu.my"
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={resending}
+              className="w-full rounded-xl h-12"
+            >
+              {resending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                "Check Email Verification"
+              )}
+            </Button>
+          </form>
+          <p className="mt-4 text-sm text-gray-600">
+            Need a new account?{" "}
             <Link to="/register" className="font-medium text-primary hover:text-primary/80">
-              Try registering again
+              Register again
             </Link>
           </p>
         </div>

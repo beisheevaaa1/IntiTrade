@@ -27,6 +27,12 @@ export function isAllowedEmail(email: string, domains: string[]) {
   return domains.includes(domain);
 }
 
+export function normalizeIntiAccountIdentifier(value: string, studentDomain = "student.newinti.edu.my") {
+  const input = value.trim().toLowerCase();
+  if (/^i\d{6,10}$/.test(input)) return `${input}@${studentDomain}`;
+  return input;
+}
+
 export function isPasswordWithinBcryptLimit(password: string) {
   return Buffer.byteLength(password, "utf8") <= 72;
 }

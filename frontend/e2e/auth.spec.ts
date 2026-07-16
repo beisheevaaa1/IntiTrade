@@ -4,6 +4,10 @@ test.describe("authentication UI", () => {
   test("login password can be revealed and hidden accessibly", async ({ page }) => {
     await page.goto("/login");
 
+    await expect(page.getByLabel("INTI account")).toHaveAttribute("placeholder", "i00008872@student.newinti.edu.my");
+    await expect(page.getByText("You can also enter only your student ID, for example i00008872.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Check Email Verification" })).toBeVisible();
+
     const password = page.getByRole("textbox", { name: "Password", exact: true });
     await password.fill("visible-secret");
     await expect(password).toHaveAttribute("type", "password");
@@ -14,6 +18,32 @@ test.describe("authentication UI", () => {
 
     await page.getByRole("button", { name: "Hide password" }).click();
     await expect(password).toHaveAttribute("type", "password");
+  });
+
+  test("admin login password can be revealed and hidden accessibly", async ({ page }) => {
+    await page.goto("/admin/login");
+
+    const password = page.getByRole("textbox", { name: "Security Password" });
+    await password.fill("admin-visible-secret");
+    await expect(password).toHaveAttribute("type", "password");
+
+    await page.getByRole("button", { name: "Show password" }).click();
+    await expect(password).toHaveAttribute("type", "text");
+    await expect(page.getByRole("button", { name: "Hide password" })).toHaveAttribute("aria-pressed", "true");
+
+    await page.getByRole("button", { name: "Hide password" }).click();
+    await expect(password).toHaveAttribute("type", "password");
+  });
+
+  test("verification page can request a new email for an INTI account", async ({ page, api }) => {
+    await page.goto("/verify-email?email=i00008872");
+
+    await expect(page.getByRole("heading", { name: "Verify your account" })).toBeVisible();
+    await expect(page.getByLabel("INTI account email")).toHaveValue("i00008872");
+    await page.getByRole("button", { name: "Check Email Verification" }).click();
+
+    await expect(page.getByText("If this account needs verification, a new email has been sent.")).toBeVisible();
+    expect(api.resendVerificationRequests).toEqual([{ email: "i00008872" }]);
   });
 
   test("registration explains phone privacy and validates passwords before API submission", async ({ page, api }) => {

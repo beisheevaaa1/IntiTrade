@@ -8,6 +8,7 @@ type AuthContextValue = {
   login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
   register: (name: string, email: string, phone: string, password: string) => Promise<boolean>;
   verifyEmail: (token: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updated: Partial<User>) => void;
   reloadUser: () => Promise<void>;
@@ -52,6 +53,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async verifyEmail(verificationToken) {
       const response = await api.post("/auth/verify-email", { token: verificationToken });
       setUser(response.data.user);
+    },
+    async resendVerification(email) {
+      await api.post("/auth/resend-verification", { email });
     },
     async logout() {
       try {

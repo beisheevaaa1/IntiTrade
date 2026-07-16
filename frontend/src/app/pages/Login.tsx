@@ -8,7 +8,7 @@ import { useAuth } from "../../state/AuthContext";
 export function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
+  const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -20,7 +20,7 @@ export function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password, rememberMe);
+      await login(account, password, rememberMe);
       navigate("/");
     } catch (err: any) {
       console.error("Request failed");
@@ -59,19 +59,21 @@ export function Login() {
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>
           <div className="space-y-4">
             <div>
-              <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
+              <label htmlFor="account" className="block text-sm font-medium text-gray-700 mb-1">
+                INTI account
               </label>
               <Input
-                id="email-address"
-                name="email"
-                type="email"
-                autoComplete="email"
+                id="account"
+                name="account"
+                type="text"
+                inputMode="email"
+                autoComplete="username"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                value={account}
+                onChange={(e) => setAccount(e.target.value)}
+                placeholder="i00008872@student.newinti.edu.my"
               />
+              <p className="mt-1 text-xs text-muted-foreground">You can also enter only your student ID, for example i00008872.</p>
             </div>
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
@@ -117,6 +119,12 @@ export function Login() {
               </label>
             </div>
 
+            <Link
+              to={`/verify-email${account.trim() ? `?email=${encodeURIComponent(account.trim())}` : ""}`}
+              className="text-sm font-medium text-primary hover:text-primary/80"
+            >
+              Check Email Verification
+            </Link>
           </div>
 
           <div>

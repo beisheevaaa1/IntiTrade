@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, listingMediaValidationMessage, normalizePhone } from "./utils/validation.js";
+import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, listingMediaValidationMessage, normalizeIntiAccountIdentifier, normalizePhone } from "./utils/validation.js";
 
 describe("email domain validation", () => {
   it("allows any valid email when no domain restriction is configured", () => {
@@ -10,6 +10,11 @@ describe("email domain validation", () => {
     const domains = getAllowedEmailDomains("inti.edu.my, @student.newinti.edu.my");
     expect(isAllowedEmail("student@student.newinti.edu.my", domains)).toBe(true);
     expect(isAllowedEmail("student@example.com", domains)).toBe(false);
+  });
+
+  it("normalizes a short INTI student ID into the student email account", () => {
+    expect(normalizeIntiAccountIdentifier("I00008872")).toBe("i00008872@student.newinti.edu.my");
+    expect(normalizeIntiAccountIdentifier("i00008872@student.newinti.edu.my")).toBe("i00008872@student.newinti.edu.my");
   });
 });
 

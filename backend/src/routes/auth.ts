@@ -8,13 +8,20 @@ import { requireAuth } from "../middleware/auth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
 import { createToken, hashToken, sendVerificationEmail } from "../utils/email.js";
 import { sanitizeUser, signAccessToken } from "../utils/auth.js";
-import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, normalizePhone } from "../utils/validation.js";
+import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, normalizeIntiAccountIdentifier, normalizePhone } from "../utils/validation.js";
 import { clearSessionCookie, setSessionCookie } from "../utils/sessionCookie.js";
 import { isOwnedImageUploadUrl } from "../utils/uploadOwnership.js";
 import { lockMessageAccounts } from "../utils/messageLocks.js";
 
 const router = Router();
 const allowedEmailDomains = getAllowedEmailDomains(env.ALLOWED_EMAIL_DOMAINS, env.ALLOWED_EMAIL_DOMAIN);
+const studentEmailDomain = "student.newinti.edu.my";
+
+const accountEmailSchema = z.string()
+  .trim()
+  .min(1)
+  .transform((value) => normalizeIntiAccountIdentifier(value, studentEmailDomain))
+  .pipe(z.string().email());
 
 const authIpRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
@@ -25,7 +32,7 @@ const authIpRateLimit = createRateLimit({
 const authAccountRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  key: (req) => String(req.body?.email || "unknown-account").trim().toLowerCase(),
+  key: (req) => normalizeIntiAccountIdentifier(String(req.body?.email || "unknown-account"), studentEmailDomain),
   message: "Too many authentication attempts. Please try again later."
 });
 
@@ -57,7 +64,7 @@ const passwordSchema = z.string()
 
 const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
-  email: z.string().trim().email(),
+  email: accountEmailSchema,
   phone: phoneSchema,
   password: passwordSchema
 });
@@ -146,7 +153,7 @@ router.post("/verify-email", authIpRateLimit, verificationRateLimit, async (req,
 });
 
 router.post("/resend-verification", authIpRateLimit, verificationRateLimit, async (req, res) => {
-  const parsed = z.object({ email: z.string().trim().email() }).safeParse(req.body);
+  const parsed = z.object({ email: accountEmailSchema }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "A valid email is required" });
 
   const genericResponse = { message: "If the account requires verification, a new email has been sent." };
@@ -168,7 +175,7 @@ router.post("/resend-verification", authIpRateLimit, verificationRateLimit, asyn
 
 router.post("/login", authIpRateLimit, authAccountRateLimit, async (req, res) => {
   const parsed = z.object({
-    email: z.string().trim().email(),
+    email: accountEmailSchema,
     password: z.string().min(1).max(200),
     rememberMe: z.boolean().optional().default(false)
   }).safeParse(req.body);

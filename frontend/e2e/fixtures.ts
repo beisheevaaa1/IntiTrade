@@ -46,6 +46,7 @@ type JsonObject = Record<string, unknown>;
 export type MockApiState = {
   listingQueries: URLSearchParams[];
   registrationRequests: JsonObject[];
+  resendVerificationRequests: JsonObject[];
   profileRequests: JsonObject[];
   registerStatus: number;
   registerResponse: JsonObject;
@@ -80,6 +81,7 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
   const state: MockApiState = {
     listingQueries: [],
     registrationRequests: [],
+    resendVerificationRequests: [],
     profileRequests: [],
     registerStatus: 422,
     registerResponse: { message: "Mock registration rejected" },
@@ -225,6 +227,12 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
     if (method === "POST" && path === "/auth/register") {
       state.registrationRequests.push((request.postDataJSON() || {}) as JsonObject);
       await json(route, state.registerStatus, state.registerResponse);
+      return;
+    }
+
+    if (method === "POST" && path === "/auth/resend-verification") {
+      state.resendVerificationRequests.push((request.postDataJSON() || {}) as JsonObject);
+      await json(route, 200, { message: "If the account requires verification, a new email has been sent." });
       return;
     }
 

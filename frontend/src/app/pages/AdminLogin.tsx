@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ShieldCheck, ArrowLeft, Loader2, Lock } from "lucide-react";
+import { ShieldCheck, ArrowLeft, Loader2, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
 
 export function AdminLogin() {
@@ -10,6 +10,7 @@ export function AdminLogin() {
   const { login, logout } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -89,16 +90,27 @@ export function AdminLogin() {
               <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1">
                 Security Password
               </label>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                className="bg-slate-950 border-slate-800 text-white placeholder-slate-600 focus:border-primary focus:ring-primary h-11"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="bg-slate-950 border-slate-800 text-white placeholder-slate-600 focus:border-primary focus:ring-primary h-11 pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((visible) => !visible)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  aria-pressed={showPassword}
+                  className="absolute inset-y-0 right-0 flex w-12 items-center justify-center rounded-r-xl text-slate-500 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
+              </div>
             </div>
           </div>
 
