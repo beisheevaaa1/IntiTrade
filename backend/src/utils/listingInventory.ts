@@ -40,7 +40,10 @@ export function transactionListingType(
 
 /** All listing inventory writers use the same transaction-scoped lock. */
 export async function lockListingInventory(tx: Prisma.TransactionClient, listingId: string) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${listingId}, 0))`;
+  // pg_advisory_xact_lock returns PostgreSQL `void`. `$queryRaw` attempts to
+  // deserialize that value and Prisma rejects it; `$executeRaw` retains the
+  // same transaction-scoped lock without reading its return value.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${listingId}, 0))`;
 }
 
 /**

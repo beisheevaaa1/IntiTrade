@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => {
   const databaseTransaction = vi.fn();
   const tx = {
     $queryRaw: queryRaw,
+    $executeRaw: queryRaw,
     listing: {
       findUnique: txListingFindUnique,
       update: txListingUpdate,

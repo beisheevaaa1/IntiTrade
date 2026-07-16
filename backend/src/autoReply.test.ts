@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
   const messageCreate = vi.fn();
   const tx = {
     $queryRaw: queryRaw,
+    $executeRaw: queryRaw,
     conversation: { findUnique: conversationFindUnique, update: conversationUpdate },
     userBlock: { findFirst: userBlockFindFirst },
     message: { create: messageCreate }

@@ -8,7 +8,7 @@ function participantPairKey(firstUserId: string, secondUserId: string) {
 export async function lockMessageAccounts(tx: Prisma.TransactionClient, ...userIds: string[]) {
   for (const userId of Array.from(new Set(userIds)).sort()) {
     const key = `messages:account:${userId}`;
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
   }
 }
 
@@ -23,11 +23,11 @@ export async function lockMessageParticipants(
 ) {
   await lockMessageAccounts(tx, firstUserId, secondUserId);
   const key = participantPairKey(firstUserId, secondUserId);
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
 }
 
 /** Serializes manual and automated messages inside one conversation. */
 export async function lockConversationMessages(tx: Prisma.TransactionClient, conversationId: string) {
   const key = `messages:conversation:${conversationId}`;
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
 }

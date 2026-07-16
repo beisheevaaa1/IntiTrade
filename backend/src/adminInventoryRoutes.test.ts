@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => {
 
   const tx = {
     $queryRaw: queryRaw,
+    $executeRaw: queryRaw,
     transaction: {
       updateMany: transactionUpdateMany,
       findUniqueOrThrow: transactionFindUniqueOrThrow
