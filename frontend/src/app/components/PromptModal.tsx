@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Input } from "./ui/input";
+import { getApiErrorMessage } from "../../utils/errors";
 
 interface PromptModalProps {
   isOpen: boolean;
@@ -55,8 +56,8 @@ export const PromptModal: React.FC<PromptModalProps> = ({
     try {
       await onSubmit(value.trim());
       onClose();
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err.message || "An error occurred while submitting.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "An error occurred while submitting."));
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ShieldCheck, Mail, Loader2, ArrowLeft } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
+import { getApiErrorMessage } from "../../utils/errors";
 
 export function VerifyEmail() {
   const [params] = useSearchParams();
@@ -35,8 +36,8 @@ export function VerifyEmail() {
     try {
       await verifyEmail(token);
       navigate("/");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Verification failed. Check your token.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Verification failed. Check your token."));
     } finally {
       setLoading(false);
     }
@@ -50,8 +51,8 @@ export function VerifyEmail() {
     try {
       await resendVerification(email);
       setMessage("If this account needs verification, a new email has been sent.");
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Could not send verification email. Try again later.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not send verification email. Try again later."));
     } finally {
       setResending(false);
     }

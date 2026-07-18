@@ -1,7 +1,9 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, LifeBuoy, Loader2, MessageSquareText, Send } from "lucide-react";
 import { api } from "../../api/client";
+import type { SupportMessageResponse, SupportMessagesResponse, SupportTicketResponse, SupportTicketsResponse } from "../../api/responses";
 import type { Pagination, SupportTicket, SupportTicketCategory, SupportTicketMessage, SupportTicketStatus } from "../../types";
+import { getApiErrorMessage } from "../../utils/errors";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -60,7 +62,7 @@ export function Support() {
     setLoading(true);
     setPageError("");
     try {
-      const response = await api.get("/support", { params: { page: requestedPage, limit: 20 } });
+      const response = await api.get<SupportTicketsResponse>("/support", { params: { page: requestedPage, limit: 20 } });
       setTickets(response.data.tickets || []);
       setPagination(response.data.pagination || { page: requestedPage, limit: 20, total: 0, totalPages: 1 });
     } catch {
@@ -82,7 +84,7 @@ export function Support() {
     if (!append && conversations[ticketId]?.messages.length) return;
     setConversations((current) => ({ ...current, [ticketId]: { loading: true, messages: append ? current[ticketId]?.messages || [] : [] } }));
     try {
-      const response = await api.get(`/support/${ticketId}/messages`, { params: { page: messagePage, limit: 100 } });
+      const response = await api.get<SupportMessagesResponse>(`/support/${ticketId}/messages`, { params: { page: messagePage, limit: 100 } });
       setConversations((current) => ({
         ...current,
         [ticketId]: { loading: false, messages: append ? [...(response.data.messages || []), ...(current[ticketId]?.messages || [])] : response.data.messages || [], pagination: response.data.pagination }
@@ -107,7 +109,7 @@ export function Support() {
     setSuccess("");
     setSubmitting(true);
     try {
-      const response = await api.post("/support", { category, subject, description });
+      const response = await api.post<SupportTicketResponse>("/support", { category, subject, description });
       setSubject("");
       setDescription("");
       setCategory("TECHNICAL");
@@ -118,8 +120,8 @@ export function Support() {
       } else {
         setPage(1);
       }
-    } catch (requestError: any) {
-      setFormError(requestError.response?.data?.message || "Your support request could not be sent. Please try again.");
+    } catch (requestError) {
+      setFormError(getApiErrorMessage(requestError, "Your support request could not be sent. Please try again."));
     } finally {
       setSubmitting(false);
     }
@@ -130,7 +132,7 @@ export function Support() {
     if (!body) return;
     setSendingReplyId(ticket.id);
     try {
-      const response = await api.post(`/support/${ticket.id}/messages`, { body });
+      const response = await api.post<SupportMessageResponse>(`/support/${ticket.id}/messages`, { body });
       setConversations((current) => ({
         ...current,
         [ticket.id]: {
@@ -146,14 +148,14 @@ export function Support() {
         lastMessageAt: response.data.message.createdAt,
         _count: { messages: (item._count?.messages || 0) + 1 }
       } : item));
-    } catch (requestError: any) {
+    } catch (requestError) {
       setConversations((current) => ({
         ...current,
         [ticket.id]: {
           loading: false,
           messages: current[ticket.id]?.messages || [],
           pagination: current[ticket.id]?.pagination,
-          error: requestError.response?.data?.message || "Your reply could not be sent."
+          error: getApiErrorMessage(requestError, "Your reply could not be sent.")
         }
       }));
     } finally {

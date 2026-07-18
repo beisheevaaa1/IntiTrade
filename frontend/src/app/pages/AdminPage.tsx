@@ -6,8 +6,6 @@ import {
   Users, 
   ShoppingBag, 
   AlertTriangle, 
-  CheckCircle, 
-  XCircle, 
   Search, 
   ArrowLeft, 
   Loader2, 
@@ -26,13 +24,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { useAuth } from "../../state/AuthContext";
 import { useToast } from "../../state/ToastContext";
-import { api, mediaUrl } from "../../api/client";
-import type { User, Listing, Report, Transaction, Announcement, Pagination, SupportTicket, SupportTicketMessage, SupportTicketPriority, SupportTicketStatus } from "../../types";
-
-const isVideoUrl = (url: string) => /\.(mp4|mov|webm|ogg)$/i.test(url);
+import { api } from "../../api/client";
+import type {
+  AdminDisputesResponse,
+  AdminOverviewResponse,
+  AdminReviewsResponse,
+  AdminUsersResponse,
+  AnnouncementsResponse,
+  AuditLogsResponse,
+  ListingsResponse,
+  ReportsResponse,
+  SupportMessagesResponse,
+  SupportTicketResponse,
+  SupportTicketsResponse,
+  TransactionsResponse
+} from "../../api/responses";
+import type { AdminReview, AuditLog, PromptConfig, SystemSnapshot, User, Listing, Report, ReportStatus, Transaction, Announcement, Pagination, SupportTicket, SupportTicketMessage, SupportTicketPriority, SupportTicketStatus } from "../../types";
+import { ModerationQueue } from "../components/admin/ModerationQueue";
+import { formatPrice } from "../../utils/format";
+import { getApiErrorMessage } from "../../utils/errors";
 
 export function AdminPage() {
   const navigate = useNavigate();
@@ -50,7 +62,7 @@ export function AdminPage() {
   const [students, setStudents] = useState<User[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<AdminReview[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [disputes, setDisputes] = useState<Transaction[]>([]);
   const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
@@ -61,19 +73,19 @@ export function AdminPage() {
   const [supportPage, setSupportPage] = useState(1);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportOpenCount, setSupportOpenCount] = useState(0);
-  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [auditPage, setAuditPage] = useState(1);
   const [auditPagination, setAuditPagination] = useState<Pagination>({ page: 1, limit: 25, total: 0, totalPages: 1 });
   const [auditSearch, setAuditSearch] = useState("");
   const [auditFilter, setAuditFilter] = useState("");
-  const [systemSnapshot, setSystemSnapshot] = useState<any>(null);
+  const [systemSnapshot, setSystemSnapshot] = useState<SystemSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   
   // Rejection Dialog State
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
-  const [promptConfig, setPromptConfig] = useState<any>(null);
+  const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null);
   
   // Filter & Sort States
   const [studentSearch, setStudentSearch] = useState("");
@@ -89,32 +101,32 @@ export function AdminPage() {
     setLoading(true);
     try {
       if (tab === "moderation") {
-        const response = await api.get("/admin/listings");
+        const response = await api.get<ListingsResponse>("/admin/listings");
         setPendingListings((response.data.listings || []).filter((listing: Listing) => listing.status === "PENDING"));
       } else if (tab === "students") {
-        const response = await api.get("/admin/users");
+        const response = await api.get<AdminUsersResponse>("/admin/users");
         setStudents((response.data.users || []).filter((student: User) => student.role === "STUDENT"));
       } else if (tab === "transactions") {
-        const response = await api.get("/admin/transactions");
+        const response = await api.get<TransactionsResponse>("/admin/transactions");
         setTransactions(response.data.transactions || []);
       } else if (tab === "disputes") {
-        const response = await api.get("/admin/disputes");
+        const response = await api.get<AdminDisputesResponse>("/admin/disputes");
         setDisputes(response.data.disputes || []);
       } else if (tab === "reports") {
-        const response = await api.get("/admin/reports");
+        const response = await api.get<ReportsResponse>("/admin/reports");
         setReports(response.data.reports || []);
       } else if (tab === "reviews") {
-        const response = await api.get("/admin/reviews");
+        const response = await api.get<AdminReviewsResponse>("/admin/reviews");
         setReviews(response.data.reviews || []);
       } else if (tab === "announcements") {
-        const response = await api.get("/admin/announcements");
+        const response = await api.get<AnnouncementsResponse>("/admin/announcements");
         setAnnouncements(response.data.announcements || []);
       } else if (tab === "audit") {
-        const response = await api.get("/admin/logs", { params: { page: auditPage, limit: 25, action: auditFilter || undefined } });
+        const response = await api.get<AuditLogsResponse>("/admin/logs", { params: { page: auditPage, limit: 25, action: auditFilter || undefined } });
         setAuditLogs(response.data.logs || []);
         setAuditPagination(response.data.pagination || { page: auditPage, limit: 25, total: 0, totalPages: 1 });
       } else if (tab === "system") {
-        const response = await api.get("/admin/system");
+        const response = await api.get<SystemSnapshot>("/admin/system");
         setSystemSnapshot(response.data);
       }
     } catch (err) {
@@ -127,7 +139,7 @@ export function AdminPage() {
   const fetchSupportData = async () => {
     setSupportLoading(true);
     try {
-      const response = await api.get("/support/admin", {
+      const response = await api.get<SupportTicketsResponse>("/support/admin", {
         params: {
           page: supportPage,
           limit: 20,
@@ -167,7 +179,7 @@ export function AdminPage() {
 
   useEffect(() => {
     if (user?.role !== "ADMIN") return;
-    api.get("/admin/overview").then((response) => setSupportOpenCount(response.data.openSupportTickets || 0)).catch(() => undefined);
+    api.get<AdminOverviewResponse>("/admin/overview").then((response) => setSupportOpenCount(response.data.openSupportTickets || 0)).catch(() => undefined);
   }, [user?.id]);
 
   useEffect(() => {
@@ -253,7 +265,7 @@ export function AdminPage() {
   const handleDismissReport = async (reportId: string) => {
     try {
       await api.patch(`/admin/reports/${reportId}`, { status: "DISMISSED" });
-      setReports(reports.map(r => r.id === reportId ? { ...r, status: "DISMISSED" as any } : r));
+      setReports(reports.map(r => r.id === reportId ? { ...r, status: "DISMISSED" as ReportStatus } : r));
       toast.success("Report dismissed.");
     } catch (err) {
       console.error("Request failed");
@@ -291,9 +303,9 @@ export function AdminPage() {
           await api.patch(`/admin/disputes/${id}/resolve`, { verdict, reason });
           setDisputes(disputes.filter(d => d.id !== id));
           toast.success(`Dispute resolved as ${verdict}`);
-        } catch (err: any) {
+        } catch (err) {
           console.error("Request failed");
-          toast.error(err.response?.data?.message || "Action failed.");
+          toast.error(getApiErrorMessage(err, "Action failed."));
         } finally {
           setActionLoading(false);
         }
@@ -311,7 +323,7 @@ export function AdminPage() {
       }
     }));
     try {
-      const response = await api.get(`/support/admin/${ticketId}/messages`, { params: { page, limit: 100 } });
+      const response = await api.get<SupportMessagesResponse>(`/support/admin/${ticketId}/messages`, { params: { page, limit: 100 } });
       setSupportConversations((current) => ({
         ...current,
         [ticketId]: {
@@ -345,7 +357,7 @@ export function AdminPage() {
     setActionLoading(true);
     try {
       const reply = draft.reply.trim();
-      const response = await api.patch(`/support/admin/${ticketId}`, {
+      const response = await api.patch<SupportTicketResponse>(`/support/admin/${ticketId}`, {
         status: draft.status,
         priority: draft.priority,
         ...(reply ? { reply } : {})
@@ -358,9 +370,9 @@ export function AdminPage() {
       }));
       if (reply && openSupportTicketId === ticketId) await loadSupportConversation(ticketId);
       toast.success("Support ticket updated.");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Request failed");
-      toast.error(err.response?.data?.message || "Support ticket update failed.");
+      toast.error(getApiErrorMessage(err, "Support ticket update failed."));
     } finally {
       setActionLoading(false);
     }
@@ -497,102 +509,12 @@ export function AdminPage() {
         
         {/* 1. Moderation Queue */}
         {activeTab === "moderation" && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-bold text-gray-900">Pending Review ({pendingListings.length})</h2>
-            
-            {pendingListings.length === 0 ? (
-              <div className="bg-white text-center py-12 rounded-2xl border border-border shadow-sm text-muted-foreground">
-                No listings require moderation. All caught up!
-              </div>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-6">
-                {pendingListings.map(item => (
-                  <Card key={item.id} className="bg-white border-border shadow-sm overflow-hidden flex flex-col h-full">
-                    <CardHeader className="bg-gray-50/50 border-b border-border py-4 flex flex-row items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="w-8 h-8 border">
-                          <AvatarFallback className="text-xs font-bold">US</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-xs font-semibold text-gray-900">{item.seller?.name}</p>
-                          <p className="text-[10px] text-muted-foreground">{item.seller?.email}</p>
-                        </div>
-                      </div>
-                      <Badge variant="outline">{item.type}</Badge>
-                    </CardHeader>
-                    
-                    <CardContent className="p-6 flex-1 flex flex-col justify-between">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-start gap-4">
-                          <h3 className="font-bold text-lg text-foreground">{item.title}</h3>
-                          <span className="text-primary font-bold text-lg whitespace-nowrap">RM {parseFloat(item.price).toFixed(2)}</span>
-                        </div>
-                        <div className="rounded-2xl border border-border bg-gray-50 p-3">
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <p className="text-xs font-bold uppercase tracking-wide text-gray-600">Listing media</p>
-                            <span className="text-[11px] text-muted-foreground">{item.images?.length || 0} file{item.images?.length === 1 ? "" : "s"}</span>
-                          </div>
-                          {item.images?.length ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                              {item.images.map((image, index) => {
-                                const src = mediaUrl(image.url);
-                                return (
-                                  <a
-                                    key={image.id || image.url}
-                                    href={src}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="group relative aspect-square overflow-hidden rounded-xl border border-border bg-white"
-                                    title={`Open media ${index + 1}`}
-                                  >
-                                    {isVideoUrl(image.url) ? (
-                                      <video src={src} className="w-full h-full object-cover" muted playsInline />
-                                    ) : (
-                                      <img src={src} alt={`${item.title} media ${index + 1}`} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                    )}
-                                    <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
-                                      {index === 0 ? "Cover" : `#${index + 1}`}
-                                    </span>
-                                  </a>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-8 text-xs text-muted-foreground">
-                              No media uploaded for this listing.
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-600 line-clamp-3">{item.description}</p>
-                        <div className="text-xs text-muted-foreground space-y-1">
-                          <p><strong>Campus Location:</strong> {item.location}</p>
-                          <p><strong>Meetup Preference:</strong> {item.meetupPreference || "Not specified"}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-3 mt-6 border-t pt-4">
-                        <Button 
-                          onClick={() => handleApprove(item.id)}
-                          disabled={actionLoading}
-                          className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl h-10 gap-1.5"
-                        >
-                          <CheckCircle className="w-4 h-4" /> Approve
-                        </Button>
-                        <Button 
-                          onClick={() => setRejectingId(item.id)}
-                          disabled={actionLoading}
-                          variant="destructive"
-                          className="flex-1 font-semibold rounded-xl h-10 gap-1.5"
-                        >
-                          <XCircle className="w-4 h-4" /> Reject
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </div>
+          <ModerationQueue
+            listings={pendingListings}
+            actionLoading={actionLoading}
+            onApprove={handleApprove}
+            onReject={setRejectingId}
+          />
         )}
 
         {/* Rejection Modal/Form */}
@@ -771,7 +693,7 @@ export function AdminPage() {
                               <p className="font-medium text-gray-900">{tx.buyer?.name}</p>
                               <p className="text-[10px] text-muted-foreground font-mono">{tx.buyer?.email}</p>
                             </td>
-                            <td className="p-4 font-bold text-primary">RM {parseFloat(tx.price).toFixed(2)}</td>
+                            <td className="p-4 font-bold text-primary">{formatPrice(tx.price)}</td>
                             <td className="p-4 text-muted-foreground">{new Date(tx.createdAt).toLocaleDateString()}</td>
                           </tr>
                         ))
@@ -794,7 +716,7 @@ export function AdminPage() {
         {activeTab === "announcements" && (
           <div className="space-y-6">
             <div><h2 className="text-xl font-bold text-gray-900">Announcement approval</h2><p className="text-sm text-muted-foreground">Keep the campus board useful and non-commercial.</p></div>
-            <div className="grid md:grid-cols-2 gap-5">{announcements.map((announcement: any) => <Card key={announcement.id}><CardContent className="p-6"><div className="flex justify-between gap-3"><div><Badge variant="outline">{announcement.status}</Badge><h3 className="font-bold text-lg mt-2">{announcement.title}</h3></div><span className="text-xs text-muted-foreground">{announcement.author?.name}</span></div><p className="text-sm text-gray-600 mt-3 whitespace-pre-line">{announcement.body}</p>{announcement.status === "PENDING" && <div className="flex gap-2 mt-5 pt-4 border-t"><Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => moderateAnnouncement(announcement.id, "ACTIVE")}>Approve</Button><Button className="flex-1" variant="destructive" onClick={() => moderateAnnouncement(announcement.id, "REJECTED")}>Reject</Button></div>}</CardContent></Card>)}</div>
+            <div className="grid md:grid-cols-2 gap-5">{announcements.map((announcement) => <Card key={announcement.id}><CardContent className="p-6"><div className="flex justify-between gap-3"><div><Badge variant="outline">{announcement.status}</Badge><h3 className="font-bold text-lg mt-2">{announcement.title}</h3></div><span className="text-xs text-muted-foreground">{announcement.author?.name}</span></div><p className="text-sm text-gray-600 mt-3 whitespace-pre-line">{announcement.body}</p>{announcement.status === "PENDING" && <div className="flex gap-2 mt-5 pt-4 border-t"><Button className="flex-1 bg-green-600 hover:bg-green-700" onClick={() => moderateAnnouncement(announcement.id, "ACTIVE")}>Approve</Button><Button className="flex-1" variant="destructive" onClick={() => moderateAnnouncement(announcement.id, "REJECTED")}>Reject</Button></div>}</CardContent></Card>)}</div>
           </div>
         )}
 
@@ -918,7 +840,7 @@ export function AdminPage() {
                 <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">MEMORY</p><p className="mt-2 text-2xl font-bold">{systemSnapshot.monitoring?.memory?.rssMb || 0} MB</p><p className="text-xs text-muted-foreground">Heap {systemSnapshot.monitoring?.memory?.heapUsedMb || 0} MB</p></CardContent></Card>
                 <Card><CardContent className="p-5"><p className="text-xs font-semibold text-muted-foreground">LIVE CHAT</p><p className="mt-2 text-2xl font-bold">{systemSnapshot.monitoring?.sockets?.activeConnections || 0}</p><p className="text-xs text-muted-foreground">{systemSnapshot.monitoring?.sockets?.messagesSent || 0} messages this process</p></CardContent></Card>
               </div>
-              <Card><CardHeader><CardTitle className="text-lg">Recent safe errors</CardTitle></CardHeader><CardContent>{(systemSnapshot.monitoring?.recentErrors || []).length === 0 ? <p className="text-sm text-muted-foreground">No recent errors recorded by this process.</p> : <div className="space-y-2">{systemSnapshot.monitoring.recentErrors.map((error: any) => <div key={`${error.requestId}-${error.occurredAt}`} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{error.method} {error.path}</span><span className="text-xs text-muted-foreground">{new Date(error.occurredAt).toLocaleString()}</span></div><p className="mt-1 text-red-700">{error.message}</p><code className="mt-1 block break-all text-[10px] text-muted-foreground">{error.requestId}</code></div>)}</div>}</CardContent></Card>
+              <Card><CardHeader><CardTitle className="text-lg">Recent safe errors</CardTitle></CardHeader><CardContent>{(systemSnapshot.monitoring?.recentErrors || []).length === 0 ? <p className="text-sm text-muted-foreground">No recent errors recorded by this process.</p> : <div className="space-y-2">{systemSnapshot.monitoring?.recentErrors?.map((error) => <div key={`${error.requestId}-${error.occurredAt}`} className="rounded-lg border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{error.method} {error.path}</span><span className="text-xs text-muted-foreground">{new Date(error.occurredAt).toLocaleString()}</span></div><p className="mt-1 text-red-700">{error.message}</p><code className="mt-1 block break-all text-[10px] text-muted-foreground">{error.requestId}</code></div>)}</div>}</CardContent></Card>
             </>}
           </div>
         )}
@@ -1006,7 +928,7 @@ export function AdminPage() {
                             Buyer: <span className="font-semibold text-gray-700">{dispute.buyer?.name}</span> ({dispute.buyer?.email})
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">
-                            Price: <strong>RM {parseFloat(dispute.price).toFixed(2)}</strong> · Date: {new Date(dispute.createdAt).toLocaleString()}
+                            Price: <strong>{formatPrice(dispute.price)}</strong> · Date: {new Date(dispute.createdAt).toLocaleString()}
                           </p>
                         </div>
                         

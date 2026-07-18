@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ShieldCheck, ArrowLeft, Loader2, Lock, Eye, EyeOff } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
+import { getApiErrorMessage } from "../../utils/errors";
 
 export function AdminLogin() {
   const navigate = useNavigate();
@@ -27,9 +28,9 @@ export function AdminLogin() {
         await logout();
         setError("Access denied: You do not have administrator privileges.");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Request failed");
-      setError(err.response?.data?.message || "Invalid credentials.");
+      setError(getApiErrorMessage(err, "Invalid credentials."));
     } finally {
       setLoading(false);
     }

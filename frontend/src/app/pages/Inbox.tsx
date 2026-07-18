@@ -4,14 +4,12 @@ import {
   Search, 
   Send, 
   Image as ImageIcon, 
-  Smile, 
   ArrowLeft, 
   MessageSquare, 
   Loader2, 
   Settings, 
   Tag, 
   RefreshCw, 
-  ChevronRight, 
   ChevronDown,
   X,
   Sparkles,
@@ -27,10 +25,14 @@ import { Button } from "../components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { io, Socket } from "socket.io-client";
 import { api, API_URL, mediaUrl } from "../../api/client";
+import type { ConversationApi, ConversationResponse, ConversationsResponse, ListingsResponse, UploadResponse } from "../../api/responses";
 import { useAuth } from "../../state/AuthContext";
 import { useToast } from "../../state/ToastContext";
 import { PromptModal } from "../../app/components/PromptModal";
-import type { Conversation, Message, Listing, ListingStatus, PresentedListing } from "../../types";
+import { AttachmentSwitcherModal } from "../components/inbox/AttachmentSwitcherModal";
+import type { Conversation, Message, Listing, ListingStatus, PresentedListing, PromptConfig } from "../../types";
+import { formatPrice } from "../../utils/format";
+import { getApiErrorMessage } from "../../utils/errors";
 
 const PRESETS = [
   "How much does it cost?",
@@ -54,7 +56,7 @@ function normalizeAutoReplyDelay(value: number | string | null | undefined) {
   return Math.min(MAX_AUTO_REPLY_DELAY_SECONDS, Math.max(0, Math.trunc(parsed)));
 }
 
-function normalizeConversation(raw: Conversation & { listingSnapshot?: PresentedListing | null }): Conversation {
+function normalizeConversation(raw: ConversationApi): Conversation {
   return {
     ...raw,
     // Accept the short-lived staged response shape as well as the current
@@ -103,7 +105,7 @@ export function Inbox() {
   const [sendError, setSendError] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [promptConfig, setPromptConfig] = useState<any>(null);
+  const [promptConfig, setPromptConfig] = useState<PromptConfig | null>(null);
   
   // Settings Tabs State
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -133,6 +135,7 @@ export function Inbox() {
   const [showAttachmentModal, setShowAttachmentModal] = useState(false);
   const [sellerListings, setSellerListings] = useState<Listing[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
+  const [sellerListingsError, setSellerListingsError] = useState("");
   
   const socketRef = useRef<Socket | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -157,9 +160,9 @@ export function Inbox() {
   // Fetch all conversations
   const fetchConversations = async (selectId?: string) => {
     try {
-      const res = await api.get("/conversations");
+      const res = await api.get<ConversationsResponse>("/conversations");
       const list: Conversation[] = (Array.isArray(res.data.conversations) ? res.data.conversations : [])
-        .map((conversation: Conversation & { listingSnapshot?: PresentedListing | null }) => normalizeConversation(conversation));
+        .map((conversation) => normalizeConversation(conversation));
       setConversations(list);
       
       const targetId = selectId || activeConvId;
@@ -384,7 +387,7 @@ export function Inbox() {
     if (!file) return;
     const form = new FormData();
     form.append("file", file);
-    const response = await api.post("/uploads", form, { headers: { "Content-Type": "multipart/form-data" } });
+    const response = await api.post<UploadResponse>("/uploads", form, { headers: { "Content-Type": "multipart/form-data" } });
     setPendingAttachmentUrl(response.data.url);
   };
 
@@ -440,7 +443,7 @@ export function Inbox() {
 
   const handleResolveOffer = async (messageId: string, action: "accept" | "decline") => {
     try {
-      const res = await api.post(`/transactions/messages/${messageId}/${action}-offer`);
+      await api.post(`/transactions/messages/${messageId}/${action}-offer`);
       setMessages((current) =>
         current.map((msg) =>
           msg.id === messageId
@@ -449,8 +452,8 @@ export function Inbox() {
         )
       );
       void fetchConversations(activeConversation?.id);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Failed to resolve offer.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Failed to resolve offer."));
     }
   };
 
@@ -468,8 +471,8 @@ export function Inbox() {
             toast.success("Transaction marked as disputed.");
             setOtpValue("");
             void fetchConversations(activeConversation?.id);
-          } catch (err: any) {
-            toast.error(err.response?.data?.message || "Action failed.");
+          } catch (err) {
+            toast.error(getApiErrorMessage(err, "Action failed."));
           } finally {
             setTxSubmitting(false);
           }
@@ -490,8 +493,8 @@ export function Inbox() {
             toast.success("Reservation cancelled.");
             setOtpValue("");
             void fetchConversations(activeConversation?.id);
-          } catch (err: any) {
-            toast.error(err.response?.data?.message || "Action failed.");
+          } catch (err) {
+            toast.error(getApiErrorMessage(err, "Action failed."));
           } finally {
             setTxSubmitting(false);
           }
@@ -505,8 +508,8 @@ export function Inbox() {
       toast.success(`Transaction marked as ${status.toLowerCase()}`);
       setOtpValue("");
       void fetchConversations(activeConversation?.id);
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || "Action failed.");
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "Action failed."));
     } finally {
       setTxSubmitting(false);
     }
@@ -515,7 +518,7 @@ export function Inbox() {
   const handleSwitchListing = async (listingId: string) => {
     if (!activeConversation) return;
     try {
-      const res = await api.patch(`/conversations/${activeConversation.id}/listing`, { listingId });
+      const res = await api.patch<ConversationResponse>(`/conversations/${activeConversation.id}/listing`, { listingId });
       const updatedConversation = normalizeConversation(res.data.conversation);
       setActiveConversation(updatedConversation);
       setShowAttachmentModal(false);
@@ -526,6 +529,33 @@ export function Inbox() {
       toast.error("Failed to change attached product.");
     }
   };
+
+  useEffect(() => {
+    if (!showAttachmentModal || !activeConversation) return;
+
+    let cancelled = false;
+    setListingsLoading(true);
+    setSellerListingsError("");
+
+    api.get<ListingsResponse>("/listings", { params: { sellerId: activeConversation.sellerId, limit: 50 } })
+      .then((res) => {
+        if (cancelled) return;
+        const listings: Listing[] = Array.isArray(res.data.listings) ? res.data.listings : [];
+        setSellerListings(listings.filter((listing) => listing.id !== activeConversation.listing?.id));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSellerListings([]);
+        setSellerListingsError("Could not load the seller's active listings. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setListingsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showAttachmentModal, activeConversation?.id, activeConversation?.sellerId, activeConversation?.listing?.id]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -752,8 +782,8 @@ export function Inbox() {
                   <p className="text-sm font-semibold text-gray-900 line-clamp-1">{listingTitle(activeConversation.listing)}</p>
                 )}
                 <div className="flex items-center gap-2">
-                  {typeof activeConversation.listing?.price === "string" && Number.isFinite(Number(activeConversation.listing.price)) && (
-                    <p className="text-xs text-primary font-bold">RM {Number(activeConversation.listing.price).toFixed(2)}</p>
+                  {activeConversation.listing?.price !== undefined && activeConversation.listing?.price !== null && (
+                    <p className="text-xs text-primary font-bold">{formatPrice(activeConversation.listing.price)}</p>
                   )}
                   {!listingIsAvailable(activeConversation.listing) && (
                     <span className="text-[10px] font-semibold text-amber-700">{listingStatusLabel(activeConversation.listing?.status)}</span>
@@ -784,7 +814,7 @@ export function Inbox() {
                 <div className="flex items-center gap-2">
                   <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shrink-0"></div>
                   <div>
-                    <span className="font-bold">Reservation Active:</span> Quantity: {tx.quantity} · Price: RM {parseFloat(tx.price).toFixed(2)}
+                    <span className="font-bold">Reservation Active:</span> Quantity: {tx.quantity} · Price: {formatPrice(tx.price)}
                     {tx.meetupPoint && <p className="text-[10px] text-green-700 mt-0.5">Meetup point: <strong>{tx.meetupPoint.name}</strong></p>}
                   </div>
                 </div>
@@ -884,7 +914,7 @@ export function Inbox() {
                       {msg.offerAmount && (
                         <div className={`rounded-xl p-3 mb-2 ${isMe ? "bg-white/15" : "bg-green-50 text-green-900 border border-green-100"}`}>
                           <p className="text-[10px] font-bold uppercase tracking-wide text-xs">Price offer</p>
-                          <p className="text-lg font-extrabold">RM {Number(msg.offerAmount).toFixed(2)}</p>
+                          <p className="text-lg font-extrabold">{formatPrice(msg.offerAmount)}</p>
                           {msg.offerStatus === "ACCEPTED" && (
                             <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-bold bg-green-600 text-white rounded-full">Offer Accepted</span>
                           )}
@@ -1027,11 +1057,8 @@ export function Inbox() {
                     placeholder="Type a message..."
                     value={newMessage}
                     onChange={handleNewMessageChange}
-                    className="w-full rounded-full pl-4 pr-10 bg-gray-100 border-transparent h-12"
+                    className="w-full rounded-full px-4 bg-gray-100 border-transparent h-12"
                   />
-                  <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1 text-gray-400 h-10 w-10 rounded-full hover:bg-transparent hover:text-gray-600">
-                    <Smile className="h-5 w-5" />
-                  </Button>
                 </div>
                 <Button type="submit" disabled={sendingMessage} className="h-12 w-12 rounded-full shrink-0 flex items-center justify-center p-0">
                   {sendingMessage ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5 ml-1" />}
@@ -1193,7 +1220,7 @@ export function Inbox() {
                     <div className="space-y-4 pt-2">
                       <div className="bg-amber-50 text-amber-800 text-xs p-3 rounded-xl border border-amber-100 flex items-center gap-2">
                         <span>🎓</span>
-                        <span>ваши оценки и GPA {user?.gpa ? `(${user.gpa})` : ""} автоматически верифицированы через данные студенческого Google аккаунта.</span>
+                        <span>Your academic profile is self-reported. It is not verified by INTI or Google, so only share information you are comfortable showing to other users.</span>
                       </div>
                       
                       <div>
@@ -1268,63 +1295,17 @@ export function Inbox() {
         </div>
       )}
 
-      {/* MODAL 2: Product Attachment Switcher */}
       {showAttachmentModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-border max-h-[80vh] flex flex-col">
-            <div className="flex justify-between items-center mb-4 pb-2 border-b shrink-0">
-              <h3 className="font-extrabold text-lg text-foreground flex items-center gap-1.5">
-                <Tag className="w-4 h-4 text-primary" /> Attach Another Item
-              </h3>
-              <Button variant="ghost" size="icon" onClick={() => setShowAttachmentModal(false)} className="rounded-full">
-                <X className="w-5 h-5" />
-              </Button>
-            </div>
-
-            <p className="text-xs text-muted-foreground mb-4 shrink-0">
-              Select one of the seller's active listings to attach it to this chat conversation thread.
-            </p>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {listingsLoading ? (
-                <div className="py-12 flex justify-center">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                </div>
-              ) : sellerListings.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">
-                  This seller has no other active listings available.
-                </div>
-              ) : (
-                sellerListings.map((item) => (
-                  <div 
-                    key={item.id}
-                    onClick={() => handleSwitchListing(item.id)}
-                    className="p-3 bg-gray-50 border border-border rounded-xl hover:border-primary/40 hover:bg-red-50/10 cursor-pointer flex gap-3 transition-all group"
-                  >
-                    <div className="w-12 h-12 rounded overflow-hidden border bg-white shrink-0">
-                      <img 
-                        src={item.images?.[0]?.url ? mediaUrl(item.images[0].url) : "/placeholder-item.svg"}
-                        alt="Product"
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0 flex flex-col justify-between">
-                      <h4 className="font-bold text-sm text-gray-900 group-hover:text-primary truncate transition-colors leading-tight">
-                        {item.title}
-                      </h4>
-                      <p className="text-xs text-primary font-extrabold">RM {parseFloat(item.price).toFixed(2)}</p>
-                    </div>
-                    <div className="self-center text-gray-400 group-hover:text-primary transition-colors">
-                      <ChevronRight className="w-5 h-5" />
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        <AttachmentSwitcherModal
+          listings={sellerListings}
+          loading={listingsLoading}
+          error={sellerListingsError}
+          onClose={() => setShowAttachmentModal(false)}
+          onSelectListing={handleSwitchListing}
+        />
       )}
-          <PromptModal
+
+      <PromptModal
         isOpen={Boolean(promptConfig?.isOpen)}
         onClose={() => setPromptConfig(null)}
         title={promptConfig?.title || ""}

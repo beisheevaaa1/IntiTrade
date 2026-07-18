@@ -5,8 +5,10 @@ import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Input } from "./ui/input";
 import { api } from "../../api/client";
+import type { ConversationResponse, MeetupPointsResponse } from "../../api/responses";
 import { useToast } from "../../state/ToastContext";
 import type { Listing, MeetupPoint } from "../../types";
+import { getApiErrorMessage } from "../../utils/errors";
 
 interface ReservationModalProps {
   isOpen: boolean;
@@ -54,7 +56,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
   const fetchMeetupPoints = async () => {
     setLoadingPoints(true);
     try {
-      const res = await api.get("/community/meetup-points");
+      const res = await api.get<MeetupPointsResponse>("/community/meetup-points");
       const points: MeetupPoint[] = res.data.meetupPoints || [];
       setMeetupPoints(points);
       if (product.meetupPointId && points.some((p) => p.id === product.meetupPointId)) {
@@ -84,7 +86,7 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
       });
 
       // 2. Open or get conversation
-      const convRes = await api.post("/conversations", { listingId: product.id });
+      const convRes = await api.post<ConversationResponse>("/conversations", { listingId: product.id });
       const conversationId = convRes.data?.conversation?.id;
 
       // 3. Send structured initial meetup note if conversation created
@@ -103,9 +105,9 @@ export const ReservationModal: React.FC<ReservationModalProps> = ({
       toast.success("Item successfully reserved! Meetup details sent to seller.");
       onSuccess(conversationId);
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error reserving item:", err);
-      toast.error(err.response?.data?.message || "Could not complete the reservation.");
+      toast.error(getApiErrorMessage(err, "Could not complete the reservation."));
     } finally {
       setSubmitting(false);
     }

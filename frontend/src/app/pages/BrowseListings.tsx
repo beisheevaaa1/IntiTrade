@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { ProductCard } from "../components/ProductCard";
 import { ProductGridSkeleton } from "../components/ProductCardSkeleton";
 import { api } from "../../api/client";
+import type { CategoriesResponse, ListingsResponse } from "../../api/responses";
 import type { Listing, Category } from "../../types";
 
 const staticCategories = [
@@ -67,7 +68,7 @@ export function BrowseListings() {
 
   // Fetch categories
   useEffect(() => {
-    api.get("/listings/categories")
+    api.get<CategoriesResponse>("/listings/categories")
       .then((res) => setCategories(res.data.categories))
       .catch((err) => console.error("Error fetching categories:"));
   }, []);
@@ -98,7 +99,7 @@ export function BrowseListings() {
   // Fetch Listings with filters
   const fetchListings = (currentPage = page, append = false) => {
     setLoading(true);
-    const params: any = {
+    const params: Record<string, string | number> = {
       page: currentPage,
       limit: 12,
       status: "ACTIVE",
@@ -134,7 +135,7 @@ export function BrowseListings() {
       params.sortOrder = "desc";
     }
 
-    api.get("/listings", { params })
+    api.get<ListingsResponse>("/listings", { params })
       .then((res) => {
         const newListings = res.data.listings || [];
         setListings((prev) => append ? [...prev, ...newListings] : newListings);

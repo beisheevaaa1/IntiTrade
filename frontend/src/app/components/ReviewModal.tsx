@@ -5,12 +5,20 @@ import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { api, mediaUrl } from "../../api/client";
+import type { TransactionResponse } from "../../api/responses";
 import { useAuth } from "../../state/AuthContext";
+import type { Transaction, User } from "../../types";
+import { getApiErrorMessage } from "../../utils/errors";
+
+type ReviewTransaction = Transaction & {
+  buyer?: Pick<User, "id" | "name" | "avatarUrl">;
+  seller?: Pick<User, "id" | "name" | "avatarUrl">;
+};
 
 interface ReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  transaction: any | null;
+  transaction: ReviewTransaction | null;
   onSuccess: () => void;
 }
 
@@ -59,7 +67,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
     setLoading(true);
     setError("");
     try {
-      await api.post(`/transactions/${transaction.id}/review`, {
+      await api.post<TransactionResponse>(`/transactions/${transaction.id}/review`, {
         rating,
         comment: comment.trim() ? comment.trim() : undefined
       });
@@ -68,9 +76,9 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
       // Reset form
       setRating(5);
       setComment("");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to submit review:", err);
-      setError(err.response?.data?.message || "Failed to submit your review. Please try again.");
+      setError(getApiErrorMessage(err, "Failed to submit your review. Please try again."));
     } finally {
       setLoading(false);
     }

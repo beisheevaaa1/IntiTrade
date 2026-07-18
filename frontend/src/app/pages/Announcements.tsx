@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { CalendarDays, MapPin, Megaphone, PlusCircle } from "lucide-react";
 import { api, mediaUrl } from "../../api/client";
+import type { AnnouncementsResponse, UploadResponse } from "../../api/responses";
 import { useAuth } from "../../state/AuthContext";
 import type { Announcement } from "../../types";
 import { Button } from "../components/ui/button";
@@ -21,7 +22,7 @@ export function Announcements() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("");
 
-  const load = () => api.get("/announcements").then((res) => setAnnouncements(res.data.announcements));
+  const load = () => api.get<AnnouncementsResponse>("/announcements").then((res) => setAnnouncements(res.data.announcements));
   useEffect(() => { void load(); }, []);
 
   const submit = async (event: React.FormEvent) => {
@@ -40,7 +41,7 @@ export function Announcements() {
     if (!file) return;
     const form = new FormData();
     form.append("file", file);
-    const response = await api.post("/uploads", form, { headers: { "Content-Type": "multipart/form-data" } });
+    const response = await api.post<UploadResponse>("/uploads", form, { headers: { "Content-Type": "multipart/form-data" } });
     setImageUrl(response.data.url);
   };
 

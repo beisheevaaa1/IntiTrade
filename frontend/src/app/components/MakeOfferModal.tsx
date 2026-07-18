@@ -5,8 +5,11 @@ import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Input } from "./ui/input";
 import { api } from "../../api/client";
+import type { ConversationResponse } from "../../api/responses";
 import { useToast } from "../../state/ToastContext";
 import type { Listing } from "../../types";
+import { formatPrice } from "../../utils/format";
+import { getApiErrorMessage } from "../../utils/errors";
 
 interface MakeOfferModalProps {
   isOpen: boolean;
@@ -55,12 +58,12 @@ export const MakeOfferModal: React.FC<MakeOfferModalProps> = ({
     setSubmitting(true);
     try {
       // 1. Get or create conversation for this listing
-      const convRes = await api.post("/conversations", { listingId: product.id });
+      const convRes = await api.post<ConversationResponse>("/conversations", { listingId: product.id });
       const conversationId = convRes.data?.conversation?.id;
       if (!conversationId) throw new Error("Could not initialize chat");
 
       // 2. Send structured offer message
-      const defaultMsg = `👋 Hi! I'd like to make an offer of **RM ${numOffer.toFixed(2)}** for "${product.title}". Let me know if that works for you!`;
+      const defaultMsg = `👋 Hi! I'd like to make an offer of **${formatPrice(numOffer)}** for "${product.title}". Let me know if that works for you!`;
       await api.post(`/conversations/${conversationId}/messages`, {
         body: message.trim() || defaultMsg,
         offerAmount: numOffer
@@ -69,9 +72,9 @@ export const MakeOfferModal: React.FC<MakeOfferModalProps> = ({
       toast.success("Offer sent successfully! The seller can accept or decline in chat.");
       onSuccess(conversationId);
       onClose();
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error sending offer:", err);
-      toast.error(err.response?.data?.message || "Could not submit your offer.");
+      toast.error(getApiErrorMessage(err, "Could not submit your offer."));
     } finally {
       setSubmitting(false);
     }
@@ -97,12 +100,12 @@ export const MakeOfferModal: React.FC<MakeOfferModalProps> = ({
           <div className="flex items-center justify-between p-4 bg-primary/5 rounded-xl border border-primary/10">
             <div>
               <span className="text-xs text-gray-500 font-semibold uppercase block">Listed Price</span>
-              <span className="text-lg font-extrabold text-gray-900">RM {currentPrice.toFixed(2)}</span>
+              <span className="text-lg font-extrabold text-gray-900">{formatPrice(currentPrice)}</span>
             </div>
             <div className="text-right">
               <span className="text-xs text-primary font-bold uppercase block">Your Offer</span>
               <span className="text-xl font-black text-primary">
-                RM {Number(offerAmount) ? Number(offerAmount).toFixed(2) : "0.00"}
+                {formatPrice(Number(offerAmount) || 0, { freeLabel: "RM 0.00" })}
               </span>
             </div>
           </div>

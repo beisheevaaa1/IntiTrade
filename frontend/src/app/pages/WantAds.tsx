@@ -3,7 +3,10 @@ import { ArrowRight, Clock, Loader2, Plus, Search } from "lucide-react";
 import { Link, useNavigate } from "react-router";
 import { api } from "../../api/client";
 import { useAuth } from "../../state/AuthContext";
+import type { CategoriesResponse, WantAdResponse, WantAdsResponse } from "../../api/responses";
 import type { Category, WantAd } from "../../types";
+import { formatPrice } from "../../utils/format";
+import { getApiErrorMessage } from "../../utils/errors";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -28,7 +31,7 @@ export function WantAds() {
   const loadWantAds = async () => {
     setLoading(true);
     try {
-      const response = await api.get("/want-ads", { params: { q: query || undefined, sort: sort === "budget" ? "budget" : undefined } });
+      const response = await api.get<WantAdsResponse>("/want-ads", { params: { q: query || undefined, sort: sort === "budget" ? "budget" : undefined } });
       setWantAds(response.data.wantAds ?? []);
     } finally {
       setLoading(false);
@@ -40,7 +43,7 @@ export function WantAds() {
   }, [sort]);
 
   useEffect(() => {
-    api.get("/listings/categories").then((response) => {
+    api.get<CategoriesResponse>("/listings/categories").then((response) => {
       const nextCategories = response.data.categories ?? [];
       setCategories(nextCategories);
       if (nextCategories.length) setCategoryId((current) => current || nextCategories[0].id);
@@ -57,14 +60,14 @@ export function WantAds() {
     setSaving(true);
     setError("");
     try {
-      const response = await api.post("/want-ads", { title, description, maxPrice: Number(maxPrice), categoryId });
+      const response = await api.post<WantAdResponse>("/want-ads", { title, description, maxPrice: Number(maxPrice), categoryId });
       setWantAds((current) => [response.data.wantAd, ...current]);
       setTitle("");
       setDescription("");
       setMaxPrice("");
       setShowForm(false);
-    } catch (err: any) {
-      setError(err.response?.data?.message || "Could not post the request.");
+    } catch (err) {
+      setError(getApiErrorMessage(err, "Could not post the request."));
     } finally {
       setSaving(false);
     }
@@ -128,7 +131,7 @@ export function WantAds() {
               <article key={ad.id} className="flex h-full flex-col rounded-xl border bg-white p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4">
                   <h2 className="text-lg font-bold leading-tight">{ad.title}</h2>
-                  <span className="whitespace-nowrap rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-primary">Max RM {Number(ad.maxPrice).toFixed(2)}</span>
+                  <span className="whitespace-nowrap rounded-full bg-red-50 px-3 py-1 text-sm font-bold text-primary">Max {formatPrice(ad.maxPrice)}</span>
                 </div>
                 <Badge variant="secondary" className="mt-3 w-fit">{ad.category.name}</Badge>
                 <p className="mt-4 flex-1 whitespace-pre-line text-sm text-muted-foreground">{ad.description}</p>

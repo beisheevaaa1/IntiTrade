@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ShieldCheck, ArrowLeft, Eye, EyeOff, Mail, Loader2, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
+import { getApiErrorMessage } from "../../utils/errors";
 
 const intiFaculties = [
   "Faculty of Business and Communications",
@@ -60,9 +61,9 @@ export function Register() {
       } else {
         navigate("/");
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Request failed");
-      setError(err.response?.data?.message || "Registration failed. Try again.");
+      setError(getApiErrorMessage(err, "Registration failed. Try again."));
     } finally {
       setLoading(false);
     }
@@ -201,7 +202,7 @@ export function Register() {
             </div>
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 mb-1">
-                INTI Institutional Email (@student.newinti.edu.my / @newinti.edu.my)
+                Email
               </label>
               <Input
                 id="email-address"
@@ -213,8 +214,8 @@ export function Register() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder={accountType === "STAFF" ? "name@newinti.edu.my" : "i00008872@student.newinti.edu.my"}
               />
-              <p className="text-xs font-medium text-amber-700 mt-1.5 bg-amber-50 p-2 rounded-lg border border-amber-200">
-                ⚠️ Must be an official institutional email (@student.newinti.edu.my or @newinti.edu.my). Personal emails like @gmail.com cannot be registered.
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Use your INTI institutional email when available.
               </p>
             </div>
             <div>

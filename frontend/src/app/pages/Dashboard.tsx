@@ -7,9 +7,7 @@ import {
   MessageSquare, 
   Star, 
   Heart, 
-  Bell, 
   Settings, 
-  TrendingUp,
   Eye,
   PlusCircle,
   Copy,
@@ -28,7 +26,9 @@ import { PromptModal } from "../components/PromptModal";
 import { DashboardSkeleton } from "../components/DashboardSkeleton";
 import { ReviewModal } from "../components/ReviewModal";
 import { api, mediaUrl } from "../../api/client";
-import type { Listing } from "../../types";
+import type { BlocksResponse, ConversationsResponse, ListingsResponse, ProfileResponse, TransactionResponse, TransactionsResponse } from "../../api/responses";
+import type { BlockedUser, Conversation, Listing, ListingStatus, Message, PromptConfig, Review, Transaction } from "../../types";
+import { formatPrice } from "../../utils/format";
 
 export function Dashboard() {
   const { toast } = useToast();
@@ -38,32 +38,33 @@ export function Dashboard() {
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
-  const [transactions, setTransactions] = useState<import("../../types").Transaction[]>([]);
-  const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
   const [privacy, setPrivacy] = useState({ showEmail: user?.showEmail ?? false, showCampusArea: user?.showCampusArea ?? true, allowMessages: user?.allowMessages ?? true, showOnlineStatus: user?.showOnlineStatus ?? true });
   const [activeTab, setActiveTab] = useState<"overview" | "listings" | "transactions" | "archived" | "privacy">("overview");
-  const [promptConfig, setPromptConfig] = useState<any>({ isOpen: false, title: "", onSubmit: () => {} });
-  const [reviewTransaction, setReviewTransaction] = useState<import("../../types").Transaction | null>(null);
+  const [promptConfig, setPromptConfig] = useState<PromptConfig>({ isOpen: false, title: "", onSubmit: () => {} });
+  const [reviewTransaction, setReviewTransaction] = useState<Transaction | null>(null);
 
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
       // Fetch user's listings
-      const listingsRes = await api.get("/listings/mine");
+      const listingsRes = await api.get<ListingsResponse>("/listings/mine");
       setListings(listingsRes.data.listings || []);
 
       // Fetch unread messages count
-      const convsRes = await api.get("/conversations");
-      const unread = (convsRes.data.conversations || [])
-        .flatMap((conversation: any) => conversation.messages || [])
-        .filter((message: any) => !message.readAt && message.sender?.id !== user?.id)
+      const convsRes = await api.get<ConversationsResponse>("/conversations");
+      const conversations: Conversation[] = convsRes.data.conversations || [];
+      const unread = conversations
+        .flatMap((conversation) => conversation.messages || [])
+        .filter((message: Message) => !message.readAt && message.sender?.id !== user?.id)
         .length;
       setUnreadMessagesCount(unread);
-      const transactionsRes = await api.get("/transactions");
+      const transactionsRes = await api.get<TransactionsResponse>("/transactions");
       setTransactions(transactionsRes.data.transactions || []);
 
       // Fetch blocked users
-      const blocksRes = await api.get("/community/blocks");
+      const blocksRes = await api.get<BlocksResponse>("/community/blocks");
       setBlockedUsers(blocksRes.data.blocks || []);
     } catch (err) {
       console.error("Error fetching dashboard data:");
@@ -93,11 +94,11 @@ export function Dashboard() {
     return () => window.removeEventListener("intitrade:messages-changed", fetchDashboardData);
   }, [navigate, user?.id]);
 
-  const handleUpdateStatus = async (id: string, status: string) => {
+  const handleUpdateStatus = async (id: string, status: ListingStatus) => {
     try {
       await api.patch(`/listings/${id}/status`, { status });
       // Update local state
-      setListings(listings.map(l => l.id === id ? { ...l, status: status as any } : l));
+      setListings(listings.map(l => l.id === id ? { ...l, status } : l));
     } catch (err) {
       console.error("Error updating status:");
       toast.error("Failed to update status.");
@@ -112,20 +113,20 @@ export function Dashboard() {
         description: "What went wrong with this transaction? Moderation will review.",
         placeholder: "Describe the meetup or item problem...",
         onSubmit: async (reason: string) => {
-          const response = await api.patch(`/transactions/${id}/status`, { status, reason });
+          const response = await api.patch<TransactionResponse>(`/transactions/${id}/status`, { status, reason });
           setTransactions((current) => current.map((transaction) => transaction.id === id ? response.data.transaction : transaction));
           void fetchDashboardData();
         }
       });
       return;
     }
-    const response = await api.patch(`/transactions/${id}/status`, { status });
+    const response = await api.patch<TransactionResponse>(`/transactions/${id}/status`, { status });
     setTransactions((current) => current.map((transaction) => transaction.id === id ? response.data.transaction : transaction));
     void fetchDashboardData();
   };
 
   const savePrivacy = async () => {
-    const response = await api.patch("/auth/profile", privacy);
+    const response = await api.patch<ProfileResponse>("/auth/profile", privacy);
     updateUser(response.data.user);
     toast.success("Privacy preferences saved.");
   };
@@ -484,7 +485,7 @@ export function Dashboard() {
       </main>
       <PromptModal
         isOpen={Boolean(promptConfig.isOpen)}
-        onClose={() => setPromptConfig((current: any) => ({ ...current, isOpen: false }))}
+        onClose={() => setPromptConfig((current) => ({ ...current, isOpen: false }))}
         title={promptConfig.title}
         description={promptConfig.description}
         placeholder={promptConfig.placeholder}
@@ -530,7 +531,7 @@ export function Dashboard() {
             </span>
           </div>
           <div className="text-primary font-bold text-sm mt-0.5">
-            {Number(item.price) <= 0 ? "Free" : `RM ${parseFloat(item.price).toFixed(2)}`}
+            {formatPrice(item.price)}
           </div>
           
           {item.status === "REJECTED" && item.rejectionReason && (
@@ -604,17 +605,17 @@ export function Dashboard() {
     );
   }
 
-  function renderTransactionRow(transaction: any) {
+  function renderTransactionRow(transaction: Transaction) {
     const isSeller = transaction.sellerId === user?.id;
     const existingReviews = transaction.reviews || (transaction.review ? [transaction.review] : []);
-    const hasReviewed = existingReviews.some((review: any) => review.reviewerId === user?.id);
+    const hasReviewed = existingReviews.some((review: Review) => review.reviewerId === user?.id);
     const reviewTargetLabel = isSeller ? "buyer" : "seller";
     return (
       <div key={transaction.id} className="p-5 flex flex-col md:flex-row gap-4 md:items-center">
         <div className="flex-1">
           <p className="font-semibold">{transaction.listing?.title}</p>
           <p className="text-sm text-muted-foreground">
-            {isSeller ? `Buyer: ${transaction.buyer?.name}` : `Seller: ${transaction.seller?.name}`} · {Number(transaction.price) <= 0 ? "Free" : `RM ${Number(transaction.price).toFixed(2)}`}
+            {isSeller ? `Buyer: ${transaction.buyer?.name}` : `Seller: ${transaction.seller?.name}`} · {formatPrice(transaction.price)}
             {transaction.quantity > 1 ? ` × ${transaction.quantity}` : ""}
           </p>
           {transaction.meetupPoint && (

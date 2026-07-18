@@ -258,3 +258,69 @@ export type Pagination = {
   total: number;
   totalPages: number;
 };
+
+export type Notification = {
+  id: string;
+  type: string;
+  payload?: string | Record<string, unknown> | null;
+  readAt?: string | null;
+  createdAt: string;
+};
+
+export type PromptConfig = {
+  isOpen: boolean;
+  title: string;
+  description?: string;
+  placeholder?: string;
+  variant?: "default" | "destructive" | "success";
+  confirmText?: string;
+  isTextarea?: boolean;
+  required?: boolean;
+  onSubmit: (value: string) => Promise<void> | void;
+};
+
+export type AdminReview = Review & {
+  transaction?: Transaction & { listing?: PresentedListing | null };
+  reviewer?: Pick<User, "id" | "name" | "avatarUrl">;
+  reviewee?: Pick<User, "id" | "name" | "email" | "avatarUrl" | "isBlocked">;
+};
+
+export type AuditLog = {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  requestId?: string | null;
+  reason?: string | null;
+  before?: unknown;
+  after?: unknown;
+  actorEmail?: string | null;
+  admin?: Pick<User, "id" | "name"> | null;
+  createdAt: string;
+};
+
+export type SystemSnapshot = {
+  readiness?: {
+    ready?: boolean;
+    database?: string;
+  };
+  monitoring?: {
+    requests?: { total?: number; averageDurationMs?: number };
+    memory?: { rssMb?: number; heapUsedMb?: number };
+    sockets?: { activeConnections?: number; messagesSent?: number };
+    recentErrors?: Array<{
+      requestId: string;
+      method: string;
+      path: string;
+      message: string;
+      occurredAt: string;
+    }>;
+  };
+};
+
+export type BlockedUser = {
+  blockedId: string;
+  reason?: string | null;
+  createdAt?: string;
+  blocked?: Pick<User, "id" | "name" | "email" | "avatarUrl">;
+};

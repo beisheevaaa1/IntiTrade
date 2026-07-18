@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { ShieldCheck, ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
+import { getApiErrorMessage } from "../../utils/errors";
 
 export function Login() {
   const navigate = useNavigate();
@@ -22,9 +23,9 @@ export function Login() {
     try {
       await login(account, password, rememberMe);
       navigate("/");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Request failed");
-      setError(err.response?.data?.message || "Invalid email or password");
+      setError(getApiErrorMessage(err, "Invalid email or password"));
     } finally {
       setLoading(false);
     }
@@ -78,8 +79,11 @@ export function Login() {
                 required
                 value={account}
                 onChange={(e) => setAccount(e.target.value)}
-                placeholder="e.g., i00008872 or i00008872@student.newinti.edu.my"
+                placeholder="i00008872@student.newinti.edu.my"
               />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                You can also enter only your student ID, for example i00008872.
+              </p>
             </div>
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">

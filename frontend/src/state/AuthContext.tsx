@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import type { AuthUserResponse, RegisterResponse } from "../api/responses";
 import type { User } from "../types";
 
 type AuthContextValue = {
@@ -23,7 +24,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.removeItem("marketplace_token");
     localStorage.removeItem("isLoggedIn");
-    api.get("/auth/me")
+    api.get<AuthUserResponse>("/auth/me")
       .then((response) => {
         setUser(response.data.user);
       })
@@ -37,12 +38,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     loading,
     async login(email, password, rememberMe = false) {
-      const response = await api.post("/auth/login", { email, password, rememberMe });
+      const response = await api.post<AuthUserResponse>("/auth/login", { email, password, rememberMe });
       setUser(response.data.user);
       return response.data.user;
     },
     async register(name, email, phone, password, accountType = "STUDENT", faculty = "") {
-      const response = await api.post("/auth/register", { name, email, phone, password, accountType, faculty });
+      const response = await api.post<RegisterResponse>("/auth/register", { name, email, phone, password, accountType, faculty });
       if (!response.data.requiresVerification) {
         setUser(response.data.user);
       }
@@ -53,7 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
     },
     async verifyEmail(verificationToken) {
-      const response = await api.post("/auth/verify-email", { token: verificationToken });
+      const response = await api.post<AuthUserResponse>("/auth/verify-email", { token: verificationToken });
       setUser(response.data.user);
     },
     async resendVerification(email) {
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser((prev) => (prev ? { ...prev, ...updated } : null));
     },
     async reloadUser() {
-      const response = await api.get("/auth/me");
+      const response = await api.get<AuthUserResponse>("/auth/me");
       setUser(response.data.user);
     }
   }), [loading, user]);

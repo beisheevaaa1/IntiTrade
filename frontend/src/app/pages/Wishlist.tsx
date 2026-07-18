@@ -2,15 +2,10 @@ import React, { useEffect, useState } from "react";
 import { Heart, Loader2 } from "lucide-react";
 import { Link } from "react-router";
 import { api, mediaUrl } from "../../api/client";
+import type { FavoritesResponse, Favorite } from "../../api/responses";
 import type { Listing, ListingStatus, PresentedListing } from "../../types";
 import { ProductCard } from "../components/ProductCard";
 import { Button } from "../components/ui/button";
-
-type Favorite = {
-  id: string;
-  listingId: string;
-  listing: PresentedListing | null;
-};
 
 function isPublicListing(listing: PresentedListing | null): listing is Listing {
   return Boolean(listing && listing.status === "ACTIVE" && !listing.unavailable && typeof listing.price === "string");
@@ -33,7 +28,7 @@ export function Wishlist() {
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
-    api.get("/favorites")
+    api.get<FavoritesResponse>("/favorites")
       .then((response) => setFavorites(Array.isArray(response.data.favorites) ? response.data.favorites : []))
       .catch(() => setLoadError("Saved listings could not be loaded. Please try again."))
       .finally(() => setLoading(false));

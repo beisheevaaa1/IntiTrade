@@ -6,6 +6,7 @@ import { Card, CardContent, CardFooter } from "./ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { mediaUrl } from "../../api/client";
 import type { Listing } from "../../types";
+import { formatPrice } from "../../utils/format";
 
 interface ProductCardProps {
   product: Listing;
@@ -27,8 +28,7 @@ export function ProductCard({ product }: ProductCardProps) {
     ? mediaUrl(product.images[0].url)
     : "/placeholder-item.svg";
 
-  const numericPrice = parseFloat(product.price);
-  const isFree = numericPrice <= 0;
+  const isFree = Number(product.price) <= 0;
 
   const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes("video");
 
@@ -72,7 +72,7 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
         
         <div className="text-xl font-bold text-primary mb-3">
-          {isFree ? "Free" : `RM ${numericPrice.toFixed(2)}`}
+          {formatPrice(product.price)}
           {!isFree && product.isNegotiable && <span className="text-xs font-normal text-muted-foreground ml-2">(Negotiable)</span>}
         </div>
 

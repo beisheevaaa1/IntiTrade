@@ -8,7 +8,10 @@ import { Badge } from "../components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { api, mediaUrl } from "../../api/client";
 import { useAuth } from "../../state/AuthContext";
+import type { ConversationResponse, FavoritesResponse, ListingResponse } from "../../api/responses";
 import type { Listing } from "../../types";
+import { formatPrice } from "../../utils/format";
+import { getApiErrorMessage } from "../../utils/errors";
 
 export function ProductDetail() {
   const { id } = useParams();
@@ -28,7 +31,7 @@ export function ProductDetail() {
     if (!id) return;
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     setLoading(true);
-    api.get(`/listings/${id}`)
+    api.get<ListingResponse>(`/listings/${id}`)
       .then((res) => {
         setProduct(res.data.listing);
       })
@@ -39,10 +42,10 @@ export function ProductDetail() {
       .finally(() => setLoading(false));
 
     if (user) {
-      api.get("/favorites")
+      api.get<FavoritesResponse>("/favorites")
         .then((res) => {
           const list = res.data.favorites || [];
-          setIsFavorited(list.some((fav: any) => fav.listingId === id));
+          setIsFavorited(list.some((fav) => fav.listingId === id));
         })
         .catch((err) => console.error("Error fetching favorites:"));
     }
@@ -95,7 +98,7 @@ export function ProductDetail() {
 
     setChatLoading(true);
     try {
-      const res = await api.post("/conversations", { listingId: product.id });
+      const res = await api.post<ConversationResponse>("/conversations", { listingId: product.id });
       const conversationId = res.data.conversation.id;
       navigate(`/inbox?conversationId=${conversationId}`);
     } catch (err) {
@@ -115,7 +118,7 @@ export function ProductDetail() {
       setReserved(true);
       if (window.confirm("Item reserved successfully! Would you like to chat with the seller now to arrange the handoff?")) {
         try {
-          const res = await api.post("/conversations", { listingId: product.id });
+          const res = await api.post<ConversationResponse>("/conversations", { listingId: product.id });
           const conversationId = res.data.conversation.id;
           navigate(`/inbox?conversationId=${conversationId}`);
         } catch (err) {
@@ -123,8 +126,8 @@ export function ProductDetail() {
           alert("Item reserved. You can message the seller from their profile or the listing details.");
         }
       }
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Could not create the reservation.");
+    } catch (err) {
+      alert(getApiErrorMessage(err, "Could not create the reservation."));
     } finally {
       setReserveLoading(false);
     }
@@ -182,8 +185,7 @@ export function ProductDetail() {
     ? product.images.map(img => mediaUrl(img.url))
     : ["/placeholder-item.svg"];
 
-  const numericPrice = parseFloat(product.price);
-  const isFree = numericPrice <= 0;
+  const isFree = Number(product.price) <= 0;
 
   return (
     <div className="bg-gray-50 flex-1 py-8">
@@ -299,7 +301,7 @@ export function ProductDetail() {
               </h1>
               
               <div className="text-3xl font-extrabold text-primary mb-6">
-                {isFree ? "Free" : `RM ${numericPrice.toFixed(2)}`}
+                {formatPrice(product.price)}
                 {!isFree && product.pricingUnit && product.pricingUnit !== "ITEM" && <span className="text-sm font-normal text-muted-foreground"> / {product.pricingUnit.toLowerCase()}</span>}
                 {!isFree && product.isNegotiable && <span className="text-sm font-normal text-muted-foreground ml-2">(Negotiable)</span>}
               </div>

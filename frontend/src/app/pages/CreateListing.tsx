@@ -11,9 +11,11 @@ import { Switch } from "../components/ui/switch";
 import { Card, CardContent } from "../components/ui/card";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
 import { api, mediaUrl } from "../../api/client";
+import type { CategoriesResponse, ListingResponse, MeetupPointsResponse, UploadResponse } from "../../api/responses";
 import { useAuth } from "../../state/AuthContext";
 import { useToast } from "../../state/ToastContext";
-import type { Category, ListingType, MeetupPoint, SellerType } from "../../types";
+import type { Category, Listing, ListingImage, ListingType, MeetupPoint, SellerType } from "../../types";
+import { getApiErrorMessage } from "../../utils/errors";
 
 const conditionsList = [
   { name: "Brand New", value: "NEW" },
@@ -107,7 +109,7 @@ export function CreateListing() {
       navigate("/login");
     }
     // Fetch active categories
-    api.get("/listings/categories")
+    api.get<CategoriesResponse>("/listings/categories")
       .then((res) => {
         setCategories(res.data.categories);
         if (res.data.categories.length > 0 && !id) {
@@ -115,7 +117,7 @@ export function CreateListing() {
         }
       })
       .catch((err) => console.error("Error fetching categories:"));
-    api.get("/community/meetup-points").then((res) => {
+    api.get<MeetupPointsResponse>("/community/meetup-points").then((res) => {
       setMeetupPoints(res.data.meetupPoints);
       if (res.data.meetupPoints.length > 0 && !id) {
         setMeetupPointId(res.data.meetupPoints[0].id);
@@ -123,9 +125,9 @@ export function CreateListing() {
     }).catch(() => undefined);
 
     if (id) {
-      api.get(`/listings/${id}`)
+      api.get<ListingResponse>(`/listings/${id}`)
         .then((res) => {
-          const l = res.data.listing;
+          const l: Listing = res.data.listing;
           setTitle(l.title);
           setDescription(l.description);
           setPrice(String(l.price));
@@ -144,7 +146,7 @@ export function CreateListing() {
           setPricingUnit(l.pricingUnit || "ITEM");
           setAvailabilityNote(l.availabilityNote || "");
           setSelectedCategoryId(l.categoryId);
-          setImages(l.images.map((img: any) => img.url));
+          setImages(l.images.map((img: ListingImage) => img.url));
         })
         .catch((err) => {
           console.error("Error loading listing for edit:");
@@ -263,11 +265,11 @@ export function CreateListing() {
         const formData = new FormData();
         formData.append("file", file);
         try {
-          const response = await api.post("/uploads", formData, { headers: { "Content-Type": "multipart/form-data" } });
+          const response = await api.post<UploadResponse>("/uploads", formData, { headers: { "Content-Type": "multipart/form-data" } });
           uploadedUrls.push(response.data.url);
           setImages([...uploadedUrls]);
-        } catch (err: any) {
-          setError(err.response?.data?.message || `${file.name}: upload failed.`);
+        } catch (err) {
+          setError(getApiErrorMessage(err, `${file.name}: upload failed.`));
         }
       }
     } finally {
@@ -337,9 +339,9 @@ export function CreateListing() {
       setTimeout(() => {
         navigate("/dashboard");
       }, 2000);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Request failed");
-      setError(err.response?.data?.message || "Failed to publish listing. Please verify inputs.");
+      setError(getApiErrorMessage(err, "Failed to publish listing. Please verify inputs."));
     } finally {
       setIsPublishing(false);
     }

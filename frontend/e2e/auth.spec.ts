@@ -58,6 +58,7 @@ test.describe("authentication UI", () => {
 
     await page.getByLabel("Full Name").fill("E2E User");
     await page.getByLabel("Email", { exact: true }).fill("e2e@example.test");
+    await page.getByLabel("Faculty *").selectOption("Faculty of Data Science and Information Technology (FDSIT)");
     await phone.fill("+60123456789");
     await page.getByLabel("Password", { exact: true }).fill("correct-password");
     await page.getByLabel("Confirm Password").fill("different-password");
@@ -74,6 +75,7 @@ test.describe("authentication UI", () => {
 
     await page.getByLabel("Full Name").fill("E2E User");
     await page.getByLabel("Email", { exact: true }).fill("e2e@example.test");
+    await page.getByLabel("Faculty *").selectOption("Faculty of Data Science and Information Technology (FDSIT)");
     await page.getByLabel("Phone number").fill("+60123456789");
     await page.getByLabel("Password", { exact: true }).fill("correct-password");
     await page.getByLabel("Confirm Password").fill("correct-password");
@@ -86,6 +88,8 @@ test.describe("authentication UI", () => {
         email: "e2e@example.test",
         phone: "+60123456789",
         password: "correct-password",
+        accountType: "STUDENT",
+        faculty: "Faculty of Data Science and Information Technology (FDSIT)",
       },
     ]);
   });

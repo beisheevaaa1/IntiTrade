@@ -6,12 +6,15 @@ import { Input } from "./ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useAuth } from "../../state/AuthContext";
 import { api, mediaUrl } from "../../api/client";
+import type { AutocompleteResponse, ConversationsResponse, NotificationsResponse } from "../../api/responses";
+import type { Conversation, Message, Notification } from "../../types";
 
-function getNotificationDetails(notification: any, userRole?: string) {
-  let parsed: any = {};
+function getNotificationDetails(notification: Notification, userRole?: string) {
+  let parsed: Record<string, unknown> = {};
   if (notification.payload) {
     try {
-      parsed = typeof notification.payload === "string" ? JSON.parse(notification.payload) : notification.payload;
+      const value = typeof notification.payload === "string" ? JSON.parse(notification.payload) : notification.payload;
+      parsed = value && typeof value === "object" ? value as Record<string, unknown> : {};
     } catch {
       parsed = {};
     }
@@ -23,8 +26,8 @@ function getNotificationDetails(notification: any, userRole?: string) {
     return {
       icon: <Package className="h-4 w-4 text-primary shrink-0 mt-0.5" />,
       title: status === "APPROVED" ? "Listing Approved 🎉" : `Listing ${status.charAt(0) + status.slice(1).toLowerCase()}`,
-      description: parsed.reason ? `Reason: ${parsed.reason}` : status === "APPROVED" ? "Your item is now live on the campus marketplace." : "Click to check your listings.",
-      targetUrl: parsed.listingId && status === "APPROVED" ? `/product/${parsed.listingId}` : "/dashboard?tab=listings"
+      description: typeof parsed.reason === "string" ? `Reason: ${parsed.reason}` : status === "APPROVED" ? "Your item is now live on the campus marketplace." : "Click to check your listings.",
+      targetUrl: typeof parsed.listingId === "string" && status === "APPROVED" ? `/product/${parsed.listingId}` : "/dashboard?tab=listings"
     };
   }
   if (type.startsWith("ANNOUNCEMENT_")) {
@@ -32,7 +35,7 @@ function getNotificationDetails(notification: any, userRole?: string) {
     return {
       icon: <Megaphone className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />,
       title: `Announcement ${status.charAt(0) + status.slice(1).toLowerCase()}`,
-      description: parsed.reason ? `Feedback: ${parsed.reason}` : "Your campus announcement has been processed by moderators.",
+      description: typeof parsed.reason === "string" ? `Feedback: ${parsed.reason}` : "Your campus announcement has been processed by moderators.",
       targetUrl: "/announcements"
     };
   }
@@ -64,8 +67,8 @@ function getNotificationDetails(notification: any, userRole?: string) {
   if (type === "DISPUTE_RESOLVED") {
     return {
       icon: <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />,
-      title: parsed.verdict ? `Dispute Resolved (${parsed.verdict})` : "Dispute Resolved",
-      description: parsed.reason ? `Admin Note: ${parsed.reason}` : "Moderation team has issued a final decision on your transaction.",
+      title: typeof parsed.verdict === "string" ? `Dispute Resolved (${parsed.verdict})` : "Dispute Resolved",
+      description: typeof parsed.reason === "string" ? `Admin Note: ${parsed.reason}` : "Moderation team has issued a final decision on your transaction.",
       targetUrl: "/dashboard?tab=transactions"
     };
   }
@@ -73,7 +76,7 @@ function getNotificationDetails(notification: any, userRole?: string) {
     return {
       icon: <HelpCircle className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />,
       title: type === "SUPPORT_TICKET_CREATED" ? "Support Ticket Created" : type === "SUPPORT_TICKET_REPLIED" ? "New Support Reply 💬" : "Support Ticket Updated",
-      description: parsed.hasNewReply ? "A moderator replied to your inquiry." : `Status updated to: ${parsed.status || "In Progress"}`,
+      description: parsed.hasNewReply === true ? "A moderator replied to your inquiry." : `Status updated to: ${typeof parsed.status === "string" ? parsed.status : "In Progress"}`,
       targetUrl: userRole === "ADMIN" ? "/admin?tab=support" : "/support"
     };
   }
@@ -90,7 +93,7 @@ export function AppLayout() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
   
@@ -105,7 +108,7 @@ export function AppLayout() {
       return;
     }
     const delayDebounce = setTimeout(() => {
-      api.get("/listings/autocomplete", { params: { q: searchQuery } })
+      api.get<AutocompleteResponse>("/listings/autocomplete", { params: { q: searchQuery } })
         .then((res) => setSuggestions(res.data.suggestions || []))
         .catch((err) => console.error("Request failed"));
     }, 250);
@@ -139,9 +142,13 @@ export function AppLayout() {
   useEffect(() => {
     if (!user) { setNotifications([]); setUnreadMessages(0); return; }
     const refreshIndicators = () => {
-      void Promise.all([api.get("/community/notifications"), api.get("/conversations")]).then(([notificationResponse, conversationResponse]) => {
+      void Promise.all([
+        api.get<NotificationsResponse>("/community/notifications"),
+        api.get<ConversationsResponse>("/conversations")
+      ]).then(([notificationResponse, conversationResponse]) => {
         setNotifications(notificationResponse.data.notifications || []);
-        const unread = (conversationResponse.data.conversations || []).flatMap((conversation: any) => conversation.messages || []).filter((message: any) => !message.readAt && message.sender?.id !== user.id).length;
+        const conversations: Conversation[] = conversationResponse.data.conversations || [];
+        const unread = conversations.flatMap((conversation) => conversation.messages || []).filter((message: Message) => !message.readAt && message.sender?.id !== user.id).length;
         setUnreadMessages(unread);
       }).catch(() => undefined);
     };

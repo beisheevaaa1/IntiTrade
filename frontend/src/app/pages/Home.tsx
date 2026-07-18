@@ -4,8 +4,10 @@ import { Shield, Users, MessageCircle, Star, Search, ArrowRight, Book, Laptop, S
 import { Button } from "../components/ui/button";
 import { ProductCard } from "../components/ProductCard";
 import { api } from "../../api/client";
+import type { CategoriesResponse, ListingsResponse, WantAdsResponse } from "../../api/responses";
 import { useAuth } from "../../state/AuthContext";
 import type { Category, Listing, WantAd } from "../../types";
+import { formatPrice } from "../../utils/format";
 
 function categoryIcon(slug: string) {
   if (slug.includes("textbook")) return Book;
@@ -35,9 +37,9 @@ export function Home() {
     }
 
     Promise.allSettled([
-      api.get("/listings", { params: { limit: 5 } }),
-      api.get("/want-ads", { params: { limit: 3 } }),
-      api.get("/listings/categories")
+      api.get<ListingsResponse>("/listings", { params: { limit: 5 } }),
+      api.get<WantAdsResponse>("/want-ads", { params: { limit: 3 } }),
+      api.get<CategoriesResponse>("/listings/categories")
     ])
       .then(([listingResult, wantAdResult, categoryResult]) => {
         if (listingResult.status === "fulfilled") {
@@ -211,7 +213,7 @@ export function Home() {
             <div key={ad.id} className="bg-white border border-border p-5 rounded-2xl shadow-sm hover:border-gray-300 transition-colors">
               <div className="flex justify-between items-start mb-3">
                 <h3 className="font-bold text-lg text-foreground">Looking for: {ad.title}</h3>
-                <span className="text-primary font-semibold whitespace-nowrap">Max: RM {Number(ad.maxPrice).toFixed(2)}</span>
+                <span className="text-primary font-semibold whitespace-nowrap">Max: {formatPrice(ad.maxPrice)}</span>
               </div>
               <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
                 {ad.description}
