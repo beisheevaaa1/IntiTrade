@@ -354,7 +354,7 @@ model Transaction {
   buyer       User         @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Cascade)
   seller      User         @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Cascade)
   meetupPoint MeetupPoint? @relation(fields: [meetupPointId], references: [id])
-  review      Review?
+  reviews     Review[]
 
   @@index([buyerId, status])
   @@index([sellerId, status])
@@ -363,7 +363,7 @@ model Transaction {
 
 model Review {
   id            String      @id @default(uuid())
-  transactionId String      @unique
+  transactionId String
   reviewerId    String
   revieweeId    String
   rating        Int
@@ -373,6 +373,7 @@ model Review {
   reviewer      User        @relation("ReviewsWritten", fields: [reviewerId], references: [id], onDelete: Cascade)
   reviewee      User        @relation("ReviewsReceived", fields: [revieweeId], references: [id], onDelete: Cascade)
 
+  @@unique([transactionId, reviewerId])
   @@index([revieweeId])
 }
 

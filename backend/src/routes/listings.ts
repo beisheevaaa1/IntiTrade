@@ -201,6 +201,12 @@ async function listingReferenceValidationMessage(categoryId?: string, meetupPoin
   return null;
 }
 
+async function categorySlugForListing(categoryId: string) {
+  const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { slug: true } });
+  if (!category) throw new ListingMutationError(400, "Category is not available");
+  return category.slug;
+}
+
 function isListingReferenceConflict(error: unknown) {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003";
 }
@@ -222,13 +228,14 @@ router.post("/", requireAuth, async (req, res) => {
   }
   const referenceError = await listingReferenceValidationMessage(data.categoryId, data.meetupPointId);
   if (referenceError) return res.status(400).json({ message: referenceError });
+  const isFreeListing = await categorySlugForListing(data.categoryId) === "for-free";
   let listing;
   try {
     listing = await prisma.listing.create({
       data: {
         title: data.title,
         description: data.description,
-        price: data.price,
+        price: isFreeListing ? 0 : data.price,
         type: data.type,
         condition: data.type === ListingType.PRODUCT ? data.condition ?? ListingCondition.GOOD : ListingCondition.NOT_APPLICABLE,
         location: data.location,
@@ -236,7 +243,7 @@ router.post("/", requireAuth, async (req, res) => {
         meetupPointId: data.meetupPointId,
         quantity: data.type === ListingType.PRODUCT ? data.quantity ?? 1 : 1,
         isRecurring: data.type !== ListingType.PRODUCT,
-        isNegotiable: data.isNegotiable ?? false,
+        isNegotiable: isFreeListing ? false : data.isNegotiable ?? false,
         showPhone: data.showPhone ?? false,
         isbn: data.isbn,
         author: data.author,
@@ -263,7 +270,7 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 router.patch("/:id", requireAuth, async (req, res) => {
-  const existing = await prisma.listing.findUnique({ where: { id: req.params.id }, include: { images: { select: { url: true } } } });
+  const existing = await prisma.listing.findUnique({ where: { id: req.params.id }, include: { images: { select: { url: true } }, category: { select: { slug: true } } } });
   if (!existing) return res.status(404).json({ message: "Listing not found" });
   if (existing.sellerId !== req.user!.id) return res.status(403).json({ message: "Only the seller can edit this listing" });
   const parsed = listingSchema.partial().safeParse(req.body);
@@ -277,6 +284,8 @@ router.patch("/:id", requireAuth, async (req, res) => {
   }
   const referenceError = await listingReferenceValidationMessage(data.categoryId, data.meetupPointId);
   if (referenceError) return res.status(400).json({ message: referenceError });
+  const nextCategorySlug = data.categoryId ? await categorySlugForListing(data.categoryId) : existing.category?.slug;
+  const isFreeListing = nextCategorySlug === "for-free";
   let updated;
   try {
     updated = await prisma.$transaction(async (tx) => {
@@ -299,6 +308,8 @@ router.patch("/:id", requireAuth, async (req, res) => {
 
       const updateData: Prisma.ListingUncheckedUpdateInput = {
         ...data,
+        price: isFreeListing ? 0 : data.price,
+        isNegotiable: isFreeListing ? false : data.isNegotiable,
         quantity: data.type !== undefined || data.quantity !== undefined ? nextQuantity : undefined,
         isRecurring: data.type ? data.type !== ListingType.PRODUCT : undefined,
         condition: data.type

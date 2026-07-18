@@ -26,6 +26,7 @@ import { useAuth } from "../../state/AuthContext";
 import { useToast } from "../../state/ToastContext";
 import { PromptModal } from "../components/PromptModal";
 import { DashboardSkeleton } from "../components/DashboardSkeleton";
+import { ReviewModal } from "../components/ReviewModal";
 import { api, mediaUrl } from "../../api/client";
 import type { Listing } from "../../types";
 
@@ -42,6 +43,7 @@ export function Dashboard() {
   const [privacy, setPrivacy] = useState({ showEmail: user?.showEmail ?? false, showCampusArea: user?.showCampusArea ?? true, allowMessages: user?.allowMessages ?? true, showOnlineStatus: user?.showOnlineStatus ?? true });
   const [activeTab, setActiveTab] = useState<"overview" | "listings" | "transactions" | "archived" | "privacy">("overview");
   const [promptConfig, setPromptConfig] = useState<any>({ isOpen: false, title: "", onSubmit: () => {} });
+  const [reviewTransaction, setReviewTransaction] = useState<import("../../types").Transaction | null>(null);
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -120,40 +122,6 @@ export function Dashboard() {
     const response = await api.patch(`/transactions/${id}/status`, { status });
     setTransactions((current) => current.map((transaction) => transaction.id === id ? response.data.transaction : transaction));
     void fetchDashboardData();
-  };
-
-  const leaveReview = (transactionId: string) => {
-    setPromptConfig({
-      isOpen: true,
-      title: "Rate Seller (1 to 5)",
-      description: "Enter a number from 1 (Poor) to 5 (Excellent)",
-      placeholder: "5",
-      isTextarea: false,
-      onSubmit: async (value: string) => {
-        const rating = Number(value);
-        if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-          toast.error("Please enter a valid rating between 1 and 5");
-          return;
-        }
-        setPromptConfig({
-          isOpen: true,
-          title: "Leave a Review Comment",
-          description: "Share a short note about your meetup or item (optional)",
-          placeholder: "Great communication, item exactly as described!",
-          isTextarea: true,
-          required: false,
-          onSubmit: async (comment: string) => {
-            try {
-              await api.post(`/transactions/${transactionId}/review`, { rating, comment: comment || undefined });
-              toast.success("Review submitted! Thank you for feedback.");
-              void fetchDashboardData();
-            } catch (err) {
-              toast.error("Failed to submit review.");
-            }
-          }
-        });
-      }
-    });
   };
 
   const savePrivacy = async () => {
@@ -514,6 +482,26 @@ export function Dashboard() {
           </Card>
         )}
       </main>
+      <PromptModal
+        isOpen={Boolean(promptConfig.isOpen)}
+        onClose={() => setPromptConfig((current: any) => ({ ...current, isOpen: false }))}
+        title={promptConfig.title}
+        description={promptConfig.description}
+        placeholder={promptConfig.placeholder}
+        confirmText={promptConfig.confirmText}
+        isTextarea={promptConfig.isTextarea}
+        required={promptConfig.required}
+        onSubmit={promptConfig.onSubmit}
+      />
+      <ReviewModal
+        isOpen={Boolean(reviewTransaction)}
+        onClose={() => setReviewTransaction(null)}
+        transaction={reviewTransaction}
+        onSuccess={() => {
+          toast.success("Review submitted. Thank you for helping build trust.");
+          void fetchDashboardData();
+        }}
+      />
     </div>
   );
 
@@ -541,7 +529,9 @@ export function Dashboard() {
               {item.status}
             </span>
           </div>
-          <div className="text-primary font-bold text-sm mt-0.5">RM {parseFloat(item.price).toFixed(2)}</div>
+          <div className="text-primary font-bold text-sm mt-0.5">
+            {Number(item.price) <= 0 ? "Free" : `RM ${parseFloat(item.price).toFixed(2)}`}
+          </div>
           
           {item.status === "REJECTED" && item.rejectionReason && (
             <div className="flex items-center gap-1 mt-2 text-xs text-red-600 bg-red-50 p-2 rounded-lg border border-red-100">
@@ -616,12 +606,15 @@ export function Dashboard() {
 
   function renderTransactionRow(transaction: any) {
     const isSeller = transaction.sellerId === user?.id;
+    const existingReviews = transaction.reviews || (transaction.review ? [transaction.review] : []);
+    const hasReviewed = existingReviews.some((review: any) => review.reviewerId === user?.id);
+    const reviewTargetLabel = isSeller ? "buyer" : "seller";
     return (
       <div key={transaction.id} className="p-5 flex flex-col md:flex-row gap-4 md:items-center">
         <div className="flex-1">
           <p className="font-semibold">{transaction.listing?.title}</p>
           <p className="text-sm text-muted-foreground">
-            {isSeller ? `Buyer: ${transaction.buyer?.name}` : `Seller: ${transaction.seller?.name}`} · RM {Number(transaction.price).toFixed(2)}
+            {isSeller ? `Buyer: ${transaction.buyer?.name}` : `Seller: ${transaction.seller?.name}`} · {Number(transaction.price) <= 0 ? "Free" : `RM ${Number(transaction.price).toFixed(2)}`}
             {transaction.quantity > 1 ? ` × ${transaction.quantity}` : ""}
           </p>
           {transaction.meetupPoint && (
@@ -650,9 +643,9 @@ export function Dashboard() {
             </Button>
           </div>
         )}
-        {transaction.status === "COMPLETED" && !isSeller && !transaction.review && (
-          <Button size="sm" variant="outline" className="gap-1" onClick={() => leaveReview(transaction.id)}>
-            <Star className="w-4 h-4" /> Rate seller
+        {transaction.status === "COMPLETED" && !hasReviewed && (
+          <Button size="sm" variant="outline" className="gap-1" onClick={() => setReviewTransaction(transaction)}>
+            <Star className="w-4 h-4" /> Write review for {reviewTargetLabel}
           </Button>
         )}
       </div>

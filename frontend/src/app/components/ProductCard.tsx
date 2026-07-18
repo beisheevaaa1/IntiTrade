@@ -28,6 +28,7 @@ export function ProductCard({ product }: ProductCardProps) {
     : "/placeholder-item.svg";
 
   const numericPrice = parseFloat(product.price);
+  const isFree = numericPrice <= 0;
 
   const isVideoUrl = (url: string) => /\.(mp4|webm|ogg|mov)$/i.test(url) || url.includes("video");
 
@@ -71,8 +72,8 @@ export function ProductCard({ product }: ProductCardProps) {
         </div>
         
         <div className="text-xl font-bold text-primary mb-3">
-          RM {numericPrice.toFixed(2)}
-          {product.isNegotiable && <span className="text-xs font-normal text-muted-foreground ml-2">(Negotiable)</span>}
+          {isFree ? "Free" : `RM ${numericPrice.toFixed(2)}`}
+          {!isFree && product.isNegotiable && <span className="text-xs font-normal text-muted-foreground ml-2">(Negotiable)</span>}
         </div>
 
         <div className="flex flex-wrap gap-2 mb-4 mt-auto">

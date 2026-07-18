@@ -428,8 +428,8 @@ export function AppLayout() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><Link to="/browse?category=textbooks" className="hover:text-primary transition-colors">Textbooks</Link></li>
                 <li><Link to="/browse?category=electronics" className="hover:text-primary transition-colors">Electronics</Link></li>
-                <li><Link to="/browse?category=furniture" className="hover:text-primary transition-colors">Furniture</Link></li>
-                <li><Link to="/browse?category=room-essentials" className="hover:text-primary transition-colors">Room Essentials</Link></li>
+                <li><Link to="/browse?category=home-decor" className="hover:text-primary transition-colors">Home Decor</Link></li>
+                <li><Link to="/browse?category=for-free" className="hover:text-primary transition-colors">For free</Link></li>
               </ul>
             </div>
             

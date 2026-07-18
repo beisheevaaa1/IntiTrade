@@ -36,7 +36,9 @@ const categories = [
   ["Creative services", "creative-services"],
   ["Transport", "transport"],
   ["Sports", "sports"],
-  ["Clothing", "clothing"]
+  ["Clothing", "clothing"],
+  ["For free", "for-free"],
+  ["Home Decor", "home-decor"]
 ] as const;
 
 // Create lists of titles, descriptions and high-quality Unsplash image URLs for listings

@@ -183,6 +183,7 @@ export function ProductDetail() {
     : ["/placeholder-item.svg"];
 
   const numericPrice = parseFloat(product.price);
+  const isFree = numericPrice <= 0;
 
   return (
     <div className="bg-gray-50 flex-1 py-8">
@@ -298,9 +299,9 @@ export function ProductDetail() {
               </h1>
               
               <div className="text-3xl font-extrabold text-primary mb-6">
-                RM {numericPrice.toFixed(2)} 
-                {product.pricingUnit && product.pricingUnit !== "ITEM" && <span className="text-sm font-normal text-muted-foreground"> / {product.pricingUnit.toLowerCase()}</span>}
-                {product.isNegotiable && <span className="text-sm font-normal text-muted-foreground ml-2">(Negotiable)</span>}
+                {isFree ? "Free" : `RM ${numericPrice.toFixed(2)}`}
+                {!isFree && product.pricingUnit && product.pricingUnit !== "ITEM" && <span className="text-sm font-normal text-muted-foreground"> / {product.pricingUnit.toLowerCase()}</span>}
+                {!isFree && product.isNegotiable && <span className="text-sm font-normal text-muted-foreground ml-2">(Negotiable)</span>}
               </div>
 
               <div className="grid grid-cols-2 gap-y-4 gap-x-2 mb-6 text-sm">

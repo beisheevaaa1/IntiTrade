@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { api, mediaUrl } from "../../api/client";
+import { useAuth } from "../../state/AuthContext";
 
 interface ReviewModalProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   transaction,
   onSuccess
 }) => {
+  const { user } = useAuth();
   const [rating, setRating] = useState<number>(5);
   const [hoverRating, setHoverRating] = useState<number>(0);
   const [comment, setComment] = useState<string>("");
@@ -28,6 +30,8 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
   if (!transaction) return null;
 
   const activeRating = hoverRating > 0 ? hoverRating : rating;
+  const reviewee = transaction.buyerId === user?.id ? transaction.seller : transaction.buyer;
+  const revieweeLabel = transaction.buyerId === user?.id ? "Seller" : "Buyer";
 
   const getRatingLabel = (stars: number) => {
     switch (stars) {
@@ -89,20 +93,20 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6 mt-2">
-          {/* Seller Card */}
+          {/* Reviewee Card */}
           <div className="flex items-center gap-3.5 bg-gray-50 p-3.5 rounded-xl border border-border">
             <Avatar className="h-12 w-12 border border-border">
-              <AvatarImage src={mediaUrl(transaction.seller?.avatarUrl || undefined)} />
+              <AvatarImage src={mediaUrl(reviewee?.avatarUrl || undefined)} />
               <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                {transaction.seller?.name?.substring(0, 2).toUpperCase() || "SE"}
+                {reviewee?.name?.substring(0, 2).toUpperCase() || "US"}
               </AvatarFallback>
             </Avatar>
             <div className="overflow-hidden flex-grow">
               <h4 className="font-bold text-foreground text-sm truncate">
-                {transaction.seller?.name || "Seller"}
+                {reviewee?.name || revieweeLabel}
               </h4>
               <p className="text-xs text-muted-foreground truncate">
-                Item: <span className="font-medium text-gray-800">{transaction.listing?.title}</span>
+                {revieweeLabel} for <span className="font-medium text-gray-800">{transaction.listing?.title}</span>
               </p>
               <p className="text-[10px] text-primary font-semibold mt-0.5">
                 Completed on {new Date(transaction.completedAt || transaction.createdAt).toLocaleDateString()}

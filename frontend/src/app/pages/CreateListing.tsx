@@ -72,6 +72,8 @@ export function CreateListing() {
   const [hideTipLocal, setHideTipLocal] = useState(false);
   const [descriptionFormat, setDescriptionFormat] = useState<"plain" | "markdown">("plain");
   const [showPreview, setShowPreview] = useState(false);
+  const selectedCategory = categories.find((category) => category.id === selectedCategoryId);
+  const isFreeListing = selectedCategory?.slug === "for-free";
 
   const handleEnableAcademicTip = async () => {
     try {
@@ -153,6 +155,13 @@ export function CreateListing() {
       if (wantedTitle) setTitle(wantedTitle.slice(0, 120));
     }
   }, [navigate, id, searchParams]);
+
+  useEffect(() => {
+    if (isFreeListing) {
+      setPrice("0");
+      setIsNegotiable(false);
+    }
+  }, [isFreeListing]);
 
   const convertPngToJpg = (file: File): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -298,12 +307,12 @@ export function CreateListing() {
       const payload = {
         title,
         description,
-        price: parseFloat(price),
+        price: isFreeListing ? 0 : parseFloat(price),
         type,
         condition: type === "PRODUCT" ? condition : "NOT_APPLICABLE",
         location,
         meetupPreference,
-        isNegotiable,
+        isNegotiable: isFreeListing ? false : isNegotiable,
         showPhone,
         meetupPointId: meetupPointId || null,
         quantity: type === "PRODUCT" ? Number(quantity) : 1,
@@ -574,7 +583,7 @@ export function CreateListing() {
                   </select>
                 </div>
 
-                {(type === "COURSE" || categories.find((category) => category.id === selectedCategoryId)?.slug === "textbooks") && (
+                {(type === "COURSE" || selectedCategory?.slug === "textbooks") && (
                   <div className="rounded-xl border bg-gray-50 p-4 space-y-4">
                     <p className="font-semibold text-sm">Academic details</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -687,39 +696,48 @@ export function CreateListing() {
             <h2 className="text-lg font-bold text-foreground mb-4">Pricing</h2>
             <Card>
               <CardContent className="p-6 space-y-6">
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-                  <div className="space-y-2">
-                    <Label htmlFor="price">Price (RM) *</Label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">RM</span>
-                      <Input 
-                        id="price" 
-                        type="number" 
-                        placeholder="0.00" 
-                        className="pl-10"
-                        min="0"
-                        step="0.01"
-                        required 
-                        value={price}
-                        onChange={(e) => setPrice(e.target.value)}
+
+                {isFreeListing ? (
+                  <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+                    <p className="font-bold text-green-800">Free item</p>
+                    <p className="text-sm text-green-700 mt-1">
+                      This listing is in the For free category, so buyers will see it as free and no price is required.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    <div className="space-y-2">
+                      <Label htmlFor="price">Price (RM) *</Label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-medium">RM</span>
+                        <Input
+                          id="price"
+                          type="number"
+                          placeholder="0.00"
+                          className="pl-10"
+                          min="0"
+                          step="0.01"
+                          required
+                          value={price}
+                          onChange={(e) => setPrice(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm h-[72px]">
+                      <div className="space-y-0.5">
+                        <Label className="text-base font-semibold">Negotiable</Label>
+                        <p className="text-xs text-muted-foreground">
+                          Allow buyers to make offers
+                        </p>
+                      </div>
+                      <Switch
+                        checked={isNegotiable}
+                        onCheckedChange={(checked) => setIsNegotiable(checked)}
                       />
                     </div>
                   </div>
-                  
-                  <div className="flex flex-row items-center justify-between rounded-lg border p-4 shadow-sm h-[72px]">
-                    <div className="space-y-0.5">
-                      <Label className="text-base font-semibold">Negotiable</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Allow buyers to make offers
-                      </p>
-                    </div>
-                    <Switch 
-                      checked={isNegotiable} 
-                      onCheckedChange={(checked) => setIsNegotiable(checked)} 
-                    />
-                  </div>
-                </div>
+                )}
 
               </CardContent>
             </Card>

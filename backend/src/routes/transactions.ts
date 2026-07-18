@@ -83,7 +83,7 @@ const transactionInclude = {
   buyer: { select: { id: true, name: true, avatarUrl: true } },
   seller: { select: { id: true, name: true, avatarUrl: true, sellerType: true } },
   meetupPoint: true,
-  review: true
+  reviews: true
 };
 
 router.get("/", requireAuth, async (req, res) => {
@@ -374,8 +374,11 @@ router.post("/:id/review", requireAuth, async (req, res) => {
   const parsed = z.object({ rating: z.coerce.number().int().min(1).max(5), comment: z.string().trim().max(500).optional() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Rating must be between 1 and 5" });
   const transaction = await prisma.transaction.findUnique({ where: { id: req.params.id } });
-  if (!transaction || transaction.buyerId !== req.user!.id) return res.status(404).json({ message: "Transaction not found" });
+  const isBuyer = transaction?.buyerId === req.user!.id;
+  const isSeller = transaction?.sellerId === req.user!.id;
+  if (!transaction || (!isBuyer && !isSeller)) return res.status(404).json({ message: "Transaction not found" });
   if (transaction.status !== TransactionStatus.COMPLETED) return res.status(409).json({ message: "Complete the transaction before reviewing" });
+  const revieweeId = isBuyer ? transaction.sellerId : transaction.buyerId;
 
   let review;
   try {
@@ -384,7 +387,7 @@ router.post("/:id/review", requireAuth, async (req, res) => {
         data: {
           transactionId: transaction.id,
           reviewerId: req.user!.id,
-          revieweeId: transaction.sellerId,
+          revieweeId,
           rating: parsed.data.rating,
           comment: parsed.data.comment
         },
@@ -392,7 +395,7 @@ router.post("/:id/review", requireAuth, async (req, res) => {
       });
       await tx.notification.create({
         data: {
-          userId: transaction.sellerId,
+          userId: revieweeId,
           type: "REVIEW_RECEIVED",
           payload: JSON.stringify({ reviewId: created.id, transactionId: transaction.id })
         }
@@ -401,7 +404,7 @@ router.post("/:id/review", requireAuth, async (req, res) => {
     });
   } catch (error) {
     if (knownRequestError(error, "P2002")) {
-      return res.status(409).json({ message: "This transaction has already been reviewed" });
+      return res.status(409).json({ message: "You already reviewed this transaction" });
     }
     const normalized = normalizeTransactionDatabaseError(error);
     if (normalized) return res.status(normalized.status).json({ message: normalized.message });

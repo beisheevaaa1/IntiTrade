@@ -13,15 +13,14 @@ const staticCategories = [
   { name: "Textbooks", slug: "textbooks" },
   { name: "Electronics", slug: "electronics" },
   { name: "Clothing", slug: "clothing" },
-  { name: "Furniture", slug: "furniture" },
-  { name: "Academic Materials", slug: "academic-materials" },
-  { name: "Room Essentials", slug: "room-essentials" },
-  { name: "Sports Equipment", slug: "sports-equipment" },
-  { name: "Services", slug: "services" },
+  { name: "Dorm essentials", slug: "dorm-essentials" },
+  { name: "Home Decor", slug: "home-decor" },
+  { name: "For free", slug: "for-free" },
+  { name: "Sports", slug: "sports" },
+  { name: "Creative services", slug: "creative-services" },
+  { name: "Transport", slug: "transport" },
   { name: "Tutoring", slug: "tutoring" },
-  { name: "Courses", slug: "courses" },
-  { name: "Free Items", slug: "free-items" },
-  { name: "Others", slug: "others" }
+  { name: "Courses", slug: "courses" }
 ];
 
 export function BrowseListings() {

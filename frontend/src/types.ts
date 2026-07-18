@@ -184,6 +184,7 @@ export type Transaction = {
   cancelledAt?: string | null;
   disputeReason?: string | null;
   review?: Review | null;
+  reviews?: Review[];
   createdAt: string;
   listing?: PresentedListing;
   buyer?: Pick<User, "id" | "name" | "email">;
