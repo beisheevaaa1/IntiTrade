@@ -9,7 +9,7 @@ export function VerifyEmail() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { verifyEmail, resendVerification } = useAuth();
-  const [token, setToken] = useState(params.get("token") ?? "");
+  const [token, setToken] = useState(params.get("token") || params.get("code") || "");
   const [email, setEmail] = useState(params.get("email") ?? "");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");

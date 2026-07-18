@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { ShieldCheck, ArrowLeft, Eye, EyeOff, Mail, Loader2 } from "lucide-react";
+import { ShieldCheck, ArrowLeft, Eye, EyeOff, Mail, Loader2, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
 
 export function Register() {
@@ -13,11 +13,15 @@ export function Register() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [accountType, setAccountType] = useState<"STUDENT" | "STAFF">("STUDENT");
+  const [faculty, setFaculty] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [verificationToken, setVerificationToken] = useState<string | undefined>();
+  const [verificationCode, setVerificationCode] = useState<string | undefined>();
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,11 +37,21 @@ export function Register() {
       return;
     }
 
+    if (accountType === "STUDENT" && !faculty) {
+      setError("Please select your Faculty or Academic Program");
+      return;
+    }
+
     setLoading(true);
     try {
-      const requiresVerification = await register(name, email, phone, password);
-      if (requiresVerification) setIsSubmitted(true);
-      else navigate("/");
+      const res = await register(name, email, phone, password, accountType, faculty);
+      if (res.requiresVerification) {
+        setVerificationToken(res.verificationToken);
+        setVerificationCode(res.verificationCode);
+        setIsSubmitted(true);
+      } else {
+        navigate("/");
+      }
     } catch (err: any) {
       console.error("Request failed");
       setError(err.response?.data?.message || "Registration failed. Try again.");
@@ -49,20 +63,39 @@ export function Register() {
   if (isSubmitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-border text-center">
-          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+        <div className="max-w-md w-full space-y-6 bg-white p-8 rounded-2xl shadow-sm border border-border text-center">
+          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
             <Mail className="h-10 w-10 text-primary" />
           </div>
-          <h2 className="text-3xl font-extrabold text-gray-900">Check your email</h2>
-          <p className="mt-2 text-muted-foreground">
-            We've sent a verification code to your email address to verify your account.
+          <h2 className="text-3xl font-extrabold text-gray-900">Verify your account</h2>
+          <p className="mt-2 text-muted-foreground text-sm">
+            We've generated an account verification requirement for <strong>{email}</strong>. Only verified INTI campus members can trade.
           </p>
-          <div className="pt-6">
-            <Link to="/verify-email">
-              <Button className="w-full rounded-xl h-12">
-                Enter Verification Page
+          {verificationCode && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left space-y-2 mt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-amber-600" /> Instant Verification Code
+                </span>
+                <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono font-bold">READY</span>
+              </div>
+              <div className="text-3xl font-mono font-black tracking-widest text-center text-amber-950 bg-white py-3 rounded-lg border border-amber-200 shadow-inner">
+                {verificationCode}
+              </div>
+              <p className="text-xs text-amber-700 leading-relaxed">
+                Click below to go to the verification page and complete your signup instantly!
+              </p>
+            </div>
+          )}
+          <div className="pt-4 space-y-3">
+            <Link to={`/verify-email?email=${encodeURIComponent(email)}&token=${verificationToken || ""}&code=${verificationCode || ""}`}>
+              <Button className="w-full rounded-xl h-12 font-bold shadow-md">
+                Enter Verification Page Now &rarr;
               </Button>
             </Link>
+            <Button variant="ghost" onClick={() => setIsSubmitted(false)} className="w-full text-xs text-muted-foreground hover:text-foreground">
+              &larr; Back to Registration
+            </Button>
           </div>
         </div>
       </div>
@@ -79,11 +112,9 @@ export function Register() {
 
       <div className="max-w-md w-full space-y-8 bg-white p-8 rounded-2xl shadow-sm border border-border">
         <div className="text-center">
-          <Link to="/" className="inline-flex items-center gap-2 mb-6">
-            <div className="w-10 h-10 bg-primary text-white flex items-center justify-center rounded-xl font-bold text-xl">
-              I
-            </div>
-            <span className="font-bold text-2xl text-foreground">IntiTrade</span>
+          <Link to="/" className="inline-flex items-center gap-3 mb-6">
+            <img src="/assets/logo.png" alt="INTI Logo" className="w-12 h-12 object-contain rounded-xl" />
+            <span className="font-bold text-3xl text-foreground">IntiTrade</span>
           </Link>
           <h2 className="text-3xl font-extrabold text-gray-900">Create an account</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -92,13 +123,56 @@ export function Register() {
         </div>
 
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100 text-center">
+          <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100 text-center font-medium">
             {error}
           </div>
         )}
         
-        <form className="mt-8 space-y-6" onSubmit={handleRegister}>
+        <form className="mt-8 space-y-5" onSubmit={handleRegister}>
           <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-sm font-semibold text-gray-700">Account Type</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setAccountType("STUDENT")}
+                  className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${accountType === "STUDENT" ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-gray-50 text-gray-700 hover:bg-gray-100"}`}
+                >
+                  🎓 INTI Student
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccountType("STAFF")}
+                  className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${accountType === "STAFF" ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-gray-50 text-gray-700 hover:bg-gray-100"}`}
+                >
+                  👔 INTI Staff
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="faculty" className="block text-sm font-medium text-gray-700 mb-1">
+                {accountType === "STUDENT" ? "Faculty / Academic Program *" : "Department / Faculty (Optional)"}
+              </label>
+              <select
+                id="faculty"
+                value={faculty}
+                onChange={(e) => setFaculty(e.target.value)}
+                required={accountType === "STUDENT"}
+                className="w-full h-11 px-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              >
+                <option value="">Select your Faculty or Division...</option>
+                <option value="Faculty of Business & Communications">Faculty of Business & Communications (FBC)</option>
+                <option value="Faculty of Computing & Information Technologies">Faculty of Computing & Information Technologies (FCI)</option>
+                <option value="Faculty of Engineering & Quantitative Studies">Faculty of Engineering & Quantitative Studies (FEQS)</option>
+                <option value="Faculty of Health & Life Sciences">Faculty of Health & Life Sciences (FHLS)</option>
+                <option value="Faculty of Art & Design">Faculty of Art & Design (FAD)</option>
+                <option value="American Degree Transfer Program">American Degree Transfer Program (AUP)</option>
+                <option value="Center of Pre-University Studies">Center of Pre-University Studies (CPUS)</option>
+                <option value="Campus Staff / Administration">Campus Staff / Administration</option>
+              </select>
+            </div>
+
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
                 Full Name
@@ -115,7 +189,7 @@ export function Register() {
             </div>
             <div>
               <label htmlFor="email-address" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
+                INTI Institutional Email (@student.newinti.edu.my / @newinti.edu.my)
               </label>
               <Input
                 id="email-address"
@@ -125,8 +199,11 @@ export function Register() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder={accountType === "STAFF" ? "name@newinti.edu.my" : "i00008872@student.newinti.edu.my"}
               />
+              <p className="text-xs font-medium text-amber-700 mt-1.5 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                ⚠️ Must be an official institutional email (@student.newinti.edu.my or @newinti.edu.my). Personal emails like @gmail.com cannot be registered.
+              </p>
             </div>
             <div>
               <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">

@@ -1,11 +1,90 @@
 import React, { useEffect, useState } from "react";
 import { Outlet, Link, useNavigate } from "react-router";
-import { Search, Bell, MessageSquare, Heart, MapPin, LogOut, PlusCircle, Megaphone } from "lucide-react";
+import { Search, Bell, MessageSquare, Heart, MapPin, LogOut, PlusCircle, Megaphone, Package, Star, CheckCircle, AlertTriangle, HelpCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { useAuth } from "../../state/AuthContext";
 import { api, mediaUrl } from "../../api/client";
+
+function getNotificationDetails(notification: any, userRole?: string) {
+  let parsed: any = {};
+  if (notification.payload) {
+    try {
+      parsed = typeof notification.payload === "string" ? JSON.parse(notification.payload) : notification.payload;
+    } catch {
+      parsed = {};
+    }
+  }
+
+  const type = notification.type || "";
+  if (type.startsWith("LISTING_")) {
+    const status = type.replace("LISTING_", "");
+    return {
+      icon: <Package className="h-4 w-4 text-primary shrink-0 mt-0.5" />,
+      title: status === "APPROVED" ? "Listing Approved 🎉" : `Listing ${status.charAt(0) + status.slice(1).toLowerCase()}`,
+      description: parsed.reason ? `Reason: ${parsed.reason}` : status === "APPROVED" ? "Your item is now live on the campus marketplace." : "Click to check your listings.",
+      targetUrl: parsed.listingId && status === "APPROVED" ? `/product/${parsed.listingId}` : "/dashboard?tab=listings"
+    };
+  }
+  if (type.startsWith("ANNOUNCEMENT_")) {
+    const status = type.replace("ANNOUNCEMENT_", "");
+    return {
+      icon: <Megaphone className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />,
+      title: `Announcement ${status.charAt(0) + status.slice(1).toLowerCase()}`,
+      description: parsed.reason ? `Feedback: ${parsed.reason}` : "Your campus announcement has been processed by moderators.",
+      targetUrl: "/announcements"
+    };
+  }
+  if (type === "RESERVATION_CREATED") {
+    return {
+      icon: <CheckCircle className="h-4 w-4 text-green-600 shrink-0 mt-0.5" />,
+      title: "New Item Reservation 📦",
+      description: "A student has requested to reserve one of your listed items.",
+      targetUrl: "/dashboard?tab=transactions"
+    };
+  }
+  if (type.startsWith("TRANSACTION_")) {
+    const status = type.replace("TRANSACTION_", "");
+    return {
+      icon: <CheckCircle className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />,
+      title: `Transaction ${status.charAt(0) + status.slice(1).toLowerCase()}`,
+      description: "Click to view updated meetup details and status.",
+      targetUrl: "/dashboard?tab=transactions"
+    };
+  }
+  if (type === "REVIEW_RECEIVED") {
+    return {
+      icon: <Star className="h-4 w-4 text-amber-500 shrink-0 mt-0.5 fill-amber-500" />,
+      title: "New Review & Rating ⭐",
+      description: "You just received new feedback for a completed campus meetup!",
+      targetUrl: "/dashboard?tab=transactions"
+    };
+  }
+  if (type === "DISPUTE_RESOLVED") {
+    return {
+      icon: <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />,
+      title: parsed.verdict ? `Dispute Resolved (${parsed.verdict})` : "Dispute Resolved",
+      description: parsed.reason ? `Admin Note: ${parsed.reason}` : "Moderation team has issued a final decision on your transaction.",
+      targetUrl: "/dashboard?tab=transactions"
+    };
+  }
+  if (type.startsWith("SUPPORT_TICKET")) {
+    return {
+      icon: <HelpCircle className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />,
+      title: type === "SUPPORT_TICKET_CREATED" ? "Support Ticket Created" : type === "SUPPORT_TICKET_REPLIED" ? "New Support Reply 💬" : "Support Ticket Updated",
+      description: parsed.hasNewReply ? "A moderator replied to your inquiry." : `Status updated to: ${parsed.status || "In Progress"}`,
+      targetUrl: userRole === "ADMIN" ? "/admin?tab=support" : "/support"
+    };
+  }
+
+  return {
+    icon: <Bell className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />,
+    title: type.replaceAll("_", " "),
+    description: "Click to check details.",
+    targetUrl: null
+  };
+}
 
 export function AppLayout() {
   const navigate = useNavigate();
@@ -163,14 +242,85 @@ export function AppLayout() {
             </Button>
             
             <div className="relative" ref={notificationRef}>
-              <Button variant="ghost" size="icon" className="relative text-foreground" onClick={openNotifications}>
+              <Button variant="ghost" size="icon" className="relative text-foreground" onClick={openNotifications} title="Notifications">
                 <Bell className="h-5 w-5" />
-                {notifications.some((notification) => !notification.readAt) && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-primary rounded-full" />}
+                {notifications.some((notification) => !notification.readAt) && <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-primary border-2 border-white rounded-full animate-pulse" />}
               </Button>
-              {showNotifications && <div className="absolute right-0 top-12 w-80 max-w-[80vw] bg-white border border-border shadow-xl rounded-2xl p-3 z-50">
-                <p className="font-bold px-2 py-2">Notifications</p>
-                {notifications.length === 0 ? <p className="text-sm text-muted-foreground px-2 py-5 text-center">No notifications yet.</p> : notifications.slice(0, 8).map((notification) => <button type="button" key={notification.id} onClick={() => { if (notification.type.startsWith("SUPPORT_TICKET")) { navigate(user?.role === "ADMIN" ? "/admin?tab=support" : "/support"); setShowNotifications(false); } }} className={`p-3 border-t text-sm w-full text-left ${notification.type.startsWith("SUPPORT_TICKET") ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}><p className="font-medium">{notification.type === "RESERVATION_CREATED" ? "New reservation or booking" : notification.type.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground mt-1">{new Date(notification.createdAt).toLocaleString()}</p></button>)}
-              </div>}
+              {showNotifications && (
+                <div className="absolute right-0 top-12 w-96 max-w-[90vw] bg-white border border-border shadow-2xl rounded-2xl p-3 z-50 animate-in fade-in-0 sm:zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between px-2 py-2 border-b border-border/60 mb-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-foreground">Notifications</p>
+                      {notifications.some((n) => !n.readAt) && (
+                        <span className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full">New</span>
+                      )}
+                    </div>
+                    {notifications.some((n) => !n.readAt) && (
+                      <button
+                        type="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            await api.patch("/community/notifications/read");
+                            setNotifications((current) => current.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString() })));
+                          } catch {}
+                        }}
+                        className="text-xs text-primary hover:underline font-semibold"
+                      >
+                        Mark all as read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-[420px] overflow-y-auto pr-1 divide-y divide-border/40">
+                    {notifications.length === 0 ? (
+                      <div className="py-8 text-center">
+                        <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-foreground">No notifications yet</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">When you trade or receive messages, updates will appear here.</p>
+                      </div>
+                    ) : (
+                      notifications.slice(0, 10).map((notification) => {
+                        const details = getNotificationDetails(notification, user?.role);
+                        const isUnread = !notification.readAt;
+                        return (
+                          <div
+                            key={notification.id}
+                            onClick={() => {
+                              if (details.targetUrl) {
+                                navigate(details.targetUrl);
+                                setShowNotifications(false);
+                              }
+                            }}
+                            className={`p-3 text-sm w-full text-left rounded-xl transition-all flex items-start gap-3 my-0.5 ${
+                              details.targetUrl ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"
+                            } ${isUnread ? "bg-red-50/40 font-medium" : ""}`}
+                          >
+                            <div className="p-2 bg-gray-100 rounded-xl shrink-0">
+                              {details.icon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-baseline justify-between gap-2">
+                                <p className={`text-sm truncate ${isUnread ? "font-bold text-foreground" : "font-semibold text-foreground/90"}`}>
+                                  {details.title}
+                                </p>
+                                {isUnread && <span className="w-2 h-2 rounded-full bg-primary shrink-0" />}
+                              </div>
+                              {details.description && (
+                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                                  {details.description}
+                                </p>
+                              )}
+                              <p className="text-[10px] text-muted-foreground/80 mt-1.5 font-mono">
+                                {new Date(notification.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             <Button variant="ghost" size="icon" className="relative text-foreground" onClick={() => navigate('/announcements')} title="Campus announcements">

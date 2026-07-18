@@ -28,6 +28,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { io, Socket } from "socket.io-client";
 import { api, API_URL, mediaUrl } from "../../api/client";
 import { useAuth } from "../../state/AuthContext";
+import { useToast } from "../../state/ToastContext";
+import { PromptModal } from "../../app/components/PromptModal";
 import type { Conversation, Message, Listing, ListingStatus, PresentedListing } from "../../types";
 
 const PRESETS = [
@@ -85,7 +87,8 @@ function listingStatusLabel(status?: ListingStatus) {
 }
 
 export function Inbox() {
-  const navigate = useNavigate();
+  const { toast, confirm } = useToast();
+    const navigate = useNavigate();
   const { user, reloadUser } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   
@@ -100,6 +103,7 @@ export function Inbox() {
   const [sendError, setSendError] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [promptConfig, setPromptConfig] = useState<any>(null);
   
   // Settings Tabs State
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -392,31 +396,44 @@ export function Inbox() {
     });
   };
 
-  const blockPartner = async () => {
+  const blockPartner = () => {
     if (!activeConversation || !user) return;
     const partnerId = activeConversation.buyer.id === user.id ? activeConversation.seller.id : activeConversation.buyer.id;
-    const reason = window.prompt(`Why do you want to block ${getPartnerName(activeConversation)}?`);
-    if (!reason?.trim()) return;
-    try {
-      await api.post(`/community/blocks/${partnerId}`, { reason: reason.trim() });
-      fetchConversations(activeConversation.id);
-    } catch (err) {
-      console.error("Failed to block user:");
-      alert("Failed to block user.");
-    }
+    setPromptConfig({
+      isOpen: true,
+      title: `Block ${getPartnerName(activeConversation)}?`,
+      description: "Why do you want to block this user? They will not be able to message you or view your listings.",
+      placeholder: "e.g., Harassment, spam, scam...",
+      onSubmit: async (reason: string) => {
+        try {
+          await api.post(`/community/blocks/${partnerId}`, { reason: reason.trim() });
+          toast.success("User blocked successfully.");
+          fetchConversations(activeConversation.id);
+        } catch (err) {
+          console.error("Failed to block user:");
+          toast.error("Failed to block user.");
+        }
+      }
+    });
   };
 
-  const unblockPartner = async () => {
+  const unblockPartner = () => {
     if (!activeConversation || !user) return;
     const partnerId = activeConversation.buyer.id === user.id ? activeConversation.seller.id : activeConversation.buyer.id;
-    if (!window.confirm(`Unblock ${getPartnerName(activeConversation)}? You will be able to message each other again.`)) return;
-    try {
-      await api.delete(`/community/blocks/${partnerId}`);
-      fetchConversations(activeConversation.id);
-    } catch (err) {
-      console.error("Failed to unblock user:");
-      alert("Failed to unblock user.");
-    }
+    confirm({
+      title: `Unblock ${getPartnerName(activeConversation)}?`,
+      description: "You will be able to exchange messages and see each other's listings again.",
+      confirmText: "Unblock",
+      onConfirm: async () => {
+        try {
+          await api.delete(`/community/blocks/${partnerId}`);
+          toast.success("User unblocked.");
+          fetchConversations(activeConversation.id);
+        } catch (err) {
+          toast.error("Failed to unblock user.");
+        }
+      }
+    });
   };
 
   const handleResolveOffer = async (messageId: string, action: "accept" | "decline") => {
@@ -431,46 +448,65 @@ export function Inbox() {
       );
       void fetchConversations(activeConversation?.id);
     } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to resolve offer.");
+      toast.error(err.response?.data?.message || "Failed to resolve offer.");
     }
   };
 
   const handleUpdateTxStatus = async (txId: string, status: "COMPLETED" | "CANCELLED" | "DISPUTED", otp?: string) => {
-    let reason = "";
     if (status === "DISPUTED") {
-      const input = window.prompt("Please state the reason for disputing this transaction:");
-      if (!input) return;
-      reason = input.trim();
-    } else if (status === "CANCELLED") {
-      if (!window.confirm("Are you sure you want to cancel this reservation?")) return;
+      setPromptConfig({
+        isOpen: true,
+        title: "Dispute Transaction",
+        description: "Please explain the issue. Moderation team will review the meetup details.",
+        placeholder: "e.g., Item was defective, seller didn't show up...",
+        onSubmit: async (reason: string) => {
+          setTxSubmitting(true);
+          try {
+            await api.patch(`/transactions/${txId}/status`, { status, reason, otpCode: otp });
+            toast.success("Transaction marked as disputed.");
+            setOtpValue("");
+            void fetchConversations(activeConversation?.id);
+          } catch (err: any) {
+            toast.error(err.response?.data?.message || "Action failed.");
+          } finally {
+            setTxSubmitting(false);
+          }
+        }
+      });
+      return;
+    }
+    if (status === "CANCELLED") {
+      confirm({
+        title: "Cancel Reservation?",
+        description: "Are you sure you want to cancel this reservation? The item will return to active listings.",
+        variant: "destructive",
+        confirmText: "Cancel Reservation",
+        onConfirm: async () => {
+          setTxSubmitting(true);
+          try {
+            await api.patch(`/transactions/${txId}/status`, { status, otpCode: otp });
+            toast.success("Reservation cancelled.");
+            setOtpValue("");
+            void fetchConversations(activeConversation?.id);
+          } catch (err: any) {
+            toast.error(err.response?.data?.message || "Action failed.");
+          } finally {
+            setTxSubmitting(false);
+          }
+        }
+      });
+      return;
     }
     setTxSubmitting(true);
     try {
-      await api.patch(`/transactions/${txId}/status`, { status, reason: reason || undefined, otpCode: otp });
-      alert(`Transaction marked as ${status.toLowerCase()}`);
+      await api.patch(`/transactions/${txId}/status`, { status, otpCode: otp });
+      toast.success(`Transaction marked as ${status.toLowerCase()}`);
       setOtpValue("");
       void fetchConversations(activeConversation?.id);
     } catch (err: any) {
-      alert(err.response?.data?.message || "Action failed.");
+      toast.error(err.response?.data?.message || "Action failed.");
     } finally {
       setTxSubmitting(false);
-    }
-  };
-
-  // Open the switcher and load listing candidates
-  const openAttachmentSwitcher = async () => {
-    if (!activeConversation) return;
-    setShowAttachmentModal(true);
-    setListingsLoading(true);
-    try {
-      const sellerId = activeConversation.sellerId;
-      // Fetch active listings of this seller
-      const res = await api.get("/listings", { params: { sellerId, status: "ACTIVE" } });
-      setSellerListings(res.data.listings || []);
-    } catch (err) {
-      console.error("Failed to fetch seller listings:");
-    } finally {
-      setListingsLoading(false);
     }
   };
 
@@ -485,7 +521,7 @@ export function Inbox() {
       fetchConversations(updatedConversation.id);
     } catch (err) {
       console.error("Failed to update conversation listing context:");
-      alert("Failed to change attached product.");
+      toast.error("Failed to change attached product.");
     }
   };
 
@@ -506,10 +542,10 @@ export function Inbox() {
       });
       await reloadUser();
       setShowSettingsModal(false);
-      alert("Settings saved successfully!");
+      toast.success("Settings saved successfully!");
     } catch (err) {
       console.error("Error saving settings:");
-      alert("Failed to save settings.");
+      toast.error("Failed to save settings.");
     } finally {
       setSavingSettings(false);
     }
@@ -728,7 +764,7 @@ export function Inbox() {
             <Button 
               variant="outline" 
               size="sm" 
-              onClick={openAttachmentSwitcher}
+              onClick={() => setShowAttachmentModal(true)}
               className="gap-1.5 h-8 text-xs font-semibold shrink-0 bg-white"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Attach Item
@@ -1286,6 +1322,14 @@ export function Inbox() {
           </div>
         </div>
       )}
+          <PromptModal
+        isOpen={Boolean(promptConfig?.isOpen)}
+        onClose={() => setPromptConfig(null)}
+        title={promptConfig?.title || ""}
+        description={promptConfig?.description}
+        placeholder={promptConfig?.placeholder}
+        onSubmit={promptConfig?.onSubmit || (async () => {})}
+      />
     </div>
   );
 }

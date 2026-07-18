@@ -5,6 +5,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import { ProductCard } from "../components/ProductCard";
+import { ProductGridSkeleton } from "../components/ProductCardSkeleton";
 import { api } from "../../api/client";
 import type { Listing, Category } from "../../types";
 
@@ -79,6 +80,21 @@ export function BrowseListings() {
     setSearchQuery(search);
     setSelectedCategory(category);
   }, [searchParams]);
+
+  // Live search debounce (350ms)
+  useEffect(() => {
+    const currentParam = searchParams.get("search") ?? "";
+    if (searchQuery !== currentParam) {
+      const timer = setTimeout(() => {
+        const newParams = new URLSearchParams(searchParams);
+        if (searchQuery.trim()) newParams.set("search", searchQuery.trim());
+        else newParams.delete("search");
+        newParams.delete("page");
+        setSearchParams(newParams);
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery, searchParams]);
 
   // Fetch Listings with filters
   const fetchListings = (currentPage = page, append = false) => {
@@ -404,9 +420,7 @@ export function BrowseListings() {
 
           {/* Grid or Loader */}
           {loading && page === 1 ? (
-            <div className="flex justify-center items-center py-24">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
+            <ProductGridSkeleton count={8} />
           ) : listings.length === 0 ? (
             <div className="text-center py-24 bg-white rounded-2xl border border-border">
               <h3 className="text-lg font-bold text-gray-900 mb-1">No items found</h3>

@@ -28,12 +28,14 @@ import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { useAuth } from "../../state/AuthContext";
+import { useToast } from "../../state/ToastContext";
 import { api, mediaUrl } from "../../api/client";
 import type { User, Listing, Report, Transaction, Announcement, Pagination, SupportTicket, SupportTicketMessage, SupportTicketPriority, SupportTicketStatus } from "../../types";
 
 export function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { toast, confirm } = useToast();
   
   type AdminTab = "moderation" | "students" | "transactions" | "reports" | "reviews" | "announcements" | "disputes" | "support" | "audit" | "system";
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
@@ -69,6 +71,7 @@ export function AdminPage() {
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [promptConfig, setPromptConfig] = useState<any>(null);
   
   // Filter & Sort States
   const [studentSearch, setStudentSearch] = useState("");
@@ -176,10 +179,10 @@ export function AdminPage() {
     try {
       await api.patch(`/admin/listings/${id}/status`, { status: "ACTIVE" });
       setPendingListings(pendingListings.filter(l => l.id !== id));
-      alert("Listing approved successfully!");
+      toast.success("Listing approved successfully!");
     } catch (err) {
       console.error("Request failed");
-      alert("Action failed.");
+      toast.error("Action failed.");
     } finally {
       setActionLoading(false);
     }
@@ -198,62 +201,102 @@ export function AdminPage() {
       setPendingListings(pendingListings.filter(l => l.id !== rejectingId));
       setRejectingId(null);
       setRejectionReason("");
-      alert("Listing rejected.");
+      toast.success("Listing rejected.");
     } catch (err) {
       console.error("Request failed");
-      alert("Action failed.");
+      toast.error("Action failed.");
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleToggleBlock = async (studentId: string, currentlyBlocked: boolean) => {
-    if (!confirm(`Are you sure you want to ${currentlyBlocked ? 'unblock' : 'block'} this student?`)) return;
-    const reason = currentlyBlocked ? undefined : window.prompt("Please provide a reason for blocking this user:")?.trim();
-    if (!currentlyBlocked && (!reason || reason.length < 3)) return;
-    try {
-      await api.patch(`/admin/users/${studentId}/block`, { isBlocked: !currentlyBlocked, reason });
-      setStudents(students.map(s => s.id === studentId ? { ...s, isBlocked: !currentlyBlocked } : s));
-      alert(`User status updated.`);
-    } catch (err) {
-      console.error("Request failed");
-      alert("Failed to update user block status.");
-    }
+  const handleToggleBlock = (studentId: string, currentlyBlocked: boolean) => {
+    confirm({
+      title: `${currentlyBlocked ? 'Unblock' : 'Block'} Student?`,
+      description: `Are you sure you want to ${currentlyBlocked ? 'unblock' : 'block'} this student?`,
+      variant: currentlyBlocked ? "success" : "destructive",
+      confirmText: currentlyBlocked ? "Unblock Student" : "Proceed to Reason",
+      onConfirm: async () => {
+        if (currentlyBlocked) {
+          try {
+            await api.patch(`/admin/users/${studentId}/block`, { isBlocked: false });
+            setStudents(students.map(s => s.id === studentId ? { ...s, isBlocked: false } : s));
+            toast.success("User unblocked.");
+          } catch (err) {
+            console.error("Request failed");
+            toast.error("Failed to update user block status.");
+          }
+          return;
+        }
+        setPromptConfig({
+          isOpen: true,
+          title: "Block User (Admin Action)",
+          description: "Please provide a reason for blocking this student.",
+          placeholder: "e.g., Repeated spam, scam behavior, prohibited listings...",
+          onSubmit: async (reason: string) => {
+            try {
+              await api.patch(`/admin/users/${studentId}/block`, { isBlocked: true, reason });
+              setStudents(students.map(s => s.id === studentId ? { ...s, isBlocked: true } : s));
+              toast.success("User blocked.");
+            } catch (err) {
+              console.error("Request failed");
+              toast.error("Failed to update user block status.");
+            }
+          }
+        });
+      }
+    });
   };
 
   const handleDismissReport = async (reportId: string) => {
     try {
       await api.patch(`/admin/reports/${reportId}`, { status: "DISMISSED" });
       setReports(reports.map(r => r.id === reportId ? { ...r, status: "DISMISSED" as any } : r));
-      alert("Report dismissed.");
+      toast.success("Report dismissed.");
     } catch (err) {
       console.error("Request failed");
-      alert("Action failed.");
+      toast.error("Action failed.");
     }
   };
 
   const moderateAnnouncement = async (id: string, status: "ACTIVE" | "REJECTED") => {
-    const rejectionReason = status === "REJECTED" ? window.prompt("Why is this announcement being rejected?") || undefined : undefined;
-    if (status === "REJECTED" && !rejectionReason) return;
-    await api.patch(`/admin/announcements/${id}/status`, { status, rejectionReason });
-    setAnnouncements((current) => current.map((announcement) => announcement.id === id ? { ...announcement, status, rejectionReason } : announcement));
+    if (status === "REJECTED") {
+      setPromptConfig({
+        isOpen: true,
+        title: "Reject Announcement",
+        description: "Why is this announcement being rejected?",
+        placeholder: "Provide feedback for the student...",
+        onSubmit: async (rejectionReason: string) => {
+          await api.patch(`/admin/announcements/${id}/status`, { status: "REJECTED", rejectionReason });
+          setAnnouncements((current) => current.map((announcement) => announcement.id === id ? { ...announcement, status: "REJECTED", rejectionReason } : announcement));
+        }
+      });
+      return;
+    }
+    await api.patch(`/admin/announcements/${id}/status`, { status });
+    setAnnouncements((current) => current.map((announcement) => announcement.id === id ? { ...announcement, status } : announcement));
   };
 
   const handleResolveDispute = async (id: string, verdict: "COMPLETED" | "CANCELLED") => {
-    const reason = window.prompt(`Please provide a reason for resolving this dispute as ${verdict.toLowerCase()}:`);
-    if (reason === null) return;
-    
-    setActionLoading(true);
-    try {
-      await api.patch(`/admin/disputes/${id}/resolve`, { verdict, reason });
-      setDisputes(disputes.filter(d => d.id !== id));
-      alert(`Dispute resolved as ${verdict}`);
-    } catch (err: any) {
-      console.error("Request failed");
-      alert(err.response?.data?.message || "Action failed.");
-    } finally {
-      setActionLoading(false);
-    }
+    setPromptConfig({
+      isOpen: true,
+      title: `Resolve Dispute as ${verdict}`,
+      description: "Please provide the official admin resolution note:",
+      placeholder: "Explain the final decision for buyer and seller...",
+      onSubmit: async (reason: string) => {
+        setActionLoading(true);
+        try {
+          await api.patch(`/admin/disputes/${id}/resolve`, { verdict, reason });
+          setDisputes(disputes.filter(d => d.id !== id));
+          toast.success(`Dispute resolved as ${verdict}`);
+        } catch (err: any) {
+          console.error("Request failed");
+          toast.error(err.response?.data?.message || "Action failed.");
+        } finally {
+          setActionLoading(false);
+        }
+      }
+    });
   };
 
   const loadSupportConversation = async (ticketId: string, page = 1, append = false) => {
@@ -312,10 +355,10 @@ export function AdminPage() {
         [ticketId]: { status: updated.status, priority: updated.priority, reply: "" }
       }));
       if (reply && openSupportTicketId === ticketId) await loadSupportConversation(ticketId);
-      alert("Support ticket updated.");
+      toast.success("Support ticket updated.");
     } catch (err: any) {
       console.error("Request failed");
-      alert(err.response?.data?.message || "Support ticket update failed.");
+      toast.error(err.response?.data?.message || "Support ticket update failed.");
     } finally {
       setActionLoading(false);
     }

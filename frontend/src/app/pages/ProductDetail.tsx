@@ -202,7 +202,7 @@ export function ProductDetail() {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Left Column: Images & Description */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="bg-white rounded-2xl border border-border aspect-video flex items-center justify-center overflow-hidden relative shadow-sm bg-black/5">
+            <div className="bg-white rounded-2xl border border-border aspect-square max-h-[550px] w-full max-w-[550px] mx-auto flex items-center justify-center overflow-hidden relative shadow-sm bg-black/5">
               {isVideoUrl(imagesList[activeImageIndex]) ? (
                 <video 
                   src={imagesList[activeImageIndex]} 

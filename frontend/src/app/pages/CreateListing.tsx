@@ -12,6 +12,7 @@ import { Card, CardContent } from "../components/ui/card";
 import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
 import { api, mediaUrl } from "../../api/client";
 import { useAuth } from "../../state/AuthContext";
+import { useToast } from "../../state/ToastContext";
 import type { Category, ListingType, MeetupPoint, SellerType } from "../../types";
 
 const conditionsList = [
@@ -36,6 +37,7 @@ export function CreateListing() {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const { user, reloadUser, updateUser } = useAuth();
+  const { toast } = useToast();
   
   // Form states
   const [title, setTitle] = useState("");
@@ -271,6 +273,15 @@ export function CreateListing() {
     setImages(newImages);
   };
 
+  const setAsCover = (index: number) => {
+    if (index === 0) return;
+    const newImages = [...images];
+    const [selected] = newImages.splice(index, 1);
+    newImages.unshift(selected);
+    setImages(newImages);
+    toast.success("Cover photo updated. Selected photo is now the cover image for your listing.");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCategoryId) {
@@ -414,19 +425,31 @@ export function CreateListing() {
                         ) : (
                           <img src={mediaUrl(img)} alt={`Upload ${index + 1}`} className="w-full h-full object-cover" />
                         )}
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2 p-2 z-10">
+                          {index !== 0 && !isVideo && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs font-bold bg-white text-gray-900 hover:bg-primary hover:text-white shadow gap-1"
+                              onClick={() => setAsCover(index)}
+                            >
+                              Make Cover
+                            </Button>
+                          )}
                           <Button 
                             type="button" 
                             variant="destructive" 
                             size="icon" 
-                            className="h-8 w-8 rounded-full"
+                            className="h-8 w-8 rounded-full shadow"
                             onClick={() => removeImage(index)}
+                            title="Remove media"
                           >
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
                         {index === 0 && !isVideo && (
-                          <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] font-bold px-2 py-1 rounded">
+                          <div className="absolute bottom-2 left-2 bg-primary text-white text-[10px] font-bold px-2 py-1 rounded shadow z-20">
                             COVER
                           </div>
                         )}

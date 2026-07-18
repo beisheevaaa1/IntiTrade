@@ -29,8 +29,11 @@ export function isAllowedEmail(email: string, domains: string[]) {
 
 export function normalizeIntiAccountIdentifier(value: string, studentDomain = "student.newinti.edu.my") {
   const input = value.trim().toLowerCase();
-  if (/^i\d{6,10}$/.test(input)) return `${input}@${studentDomain}`;
-  return input;
+  if (input.includes("@")) return input;
+  if (/^inti_i\d{5,10}$/.test(input)) return `${input}@${studentDomain}`;
+  if (/^i\d{5,10}$/.test(input)) return `${input}@${studentDomain}`;
+  if (/^\d{5,10}$/.test(input)) return `inti_i${input}@${studentDomain}`;
+  return `${input}@${studentDomain}`;
 }
 
 export function isPasswordWithinBcryptLimit(password: string) {

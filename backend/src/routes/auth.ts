@@ -66,7 +66,9 @@ const registerSchema = z.object({
   name: z.string().trim().min(2).max(80),
   email: accountEmailSchema,
   phone: phoneSchema,
-  password: passwordSchema
+  password: passwordSchema,
+  accountType: z.enum(["STUDENT", "STAFF"]).optional().default("STUDENT"),
+  faculty: z.string().trim().max(120).nullable().optional()
 });
 
 function accessTokenFor(user: { id: string; role: "STUDENT" | "ADMIN"; tokenVersion: number }) {
@@ -79,11 +81,14 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
 
   const email = parsed.data.email.toLowerCase();
   if (!isAllowedEmail(email, allowedEmailDomains)) {
-    return res.status(400).json({ message: `Use an email from: ${allowedEmailDomains.join(", ")}` });
+    return res.status(400).json({ message: "Registration requires an official INTI institutional email (@newinti.edu.my for Staff, @student.newinti.edu.my for Students). Personal emails are not permitted." });
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
   const rawVerificationToken = env.EMAIL_VERIFICATION_REQUIRED ? createToken() : null;
+  const facultyText = parsed.data.faculty
+    ? `${parsed.data.accountType === "STAFF" ? "INTI Staff" : "INTI Student"} • ${parsed.data.faculty}`
+    : (parsed.data.accountType === "STAFF" ? "INTI Staff" : "INTI Student");
 
   try {
     const user = await prisma.$transaction(async (tx) => {
@@ -92,7 +97,9 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
           email,
           name: parsed.data.name,
           phone: parsed.data.phone,
-          passwordHash
+          passwordHash,
+          faculty: facultyText,
+          isVerified: !rawVerificationToken
         }
       });
 
@@ -115,7 +122,9 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
         console.error(JSON.stringify({ level: "error", event: "verification_email_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
         return res.status(503).json({
           message: "Your account was created, but the verification email could not be sent. Please use resend verification later.",
-          requiresVerification: true
+          requiresVerification: true,
+          verificationToken: rawVerificationToken,
+          verificationCode: rawVerificationToken.slice(0, 6)
         });
       }
     }
@@ -123,7 +132,9 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
     if (!rawVerificationToken) setSessionCookie(res, accessTokenFor(user));
     res.status(201).json({
       user: sanitizeUser(user),
-      requiresVerification: Boolean(rawVerificationToken)
+      requiresVerification: Boolean(rawVerificationToken),
+      verificationToken: rawVerificationToken || undefined,
+      verificationCode: rawVerificationToken ? rawVerificationToken.slice(0, 6) : undefined
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -175,19 +186,46 @@ router.post("/resend-verification", authIpRateLimit, verificationRateLimit, asyn
 
 router.post("/login", authIpRateLimit, authAccountRateLimit, async (req, res) => {
   const parsed = z.object({
-    email: accountEmailSchema,
+    email: z.string().trim().min(1),
     password: z.string().min(1).max(200),
     rememberMe: z.boolean().optional().default(false)
   }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Invalid login data" });
 
-  const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
+  const rawInput = parsed.data.email.toLowerCase();
+  const candidates = new Set<string>();
+  candidates.add(rawInput);
+  if (rawInput.includes("@")) {
+    const localPart = rawInput.split("@")[0];
+    const domainPart = rawInput.split("@")[1];
+    if (domainPart === "student.newinti.edu.my" || domainPart === "newinti.edu.my") {
+      if (localPart.startsWith("inti_")) {
+        candidates.add(`${localPart.replace("inti_", "")}@${domainPart}`);
+      } else {
+        candidates.add(`inti_${localPart}@${domainPart}`);
+      }
+    }
+  } else {
+    const idOnly = rawInput.replace(/^inti_/, "");
+    candidates.add(`${idOnly}@student.newinti.edu.my`);
+    candidates.add(`inti_${idOnly}@student.newinti.edu.my`);
+    candidates.add(`${idOnly}@newinti.edu.my`);
+    candidates.add(`inti_${idOnly}@newinti.edu.my`);
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { OR: Array.from(candidates).map(email => ({ email })) }
+  });
+
   if (!user) return res.status(401).json({ message: "Invalid email or password" });
+  if (user.isBlocked) return res.status(403).json({ message: "Your account is blocked" });
 
   const matches = await bcrypt.compare(parsed.data.password, user.passwordHash);
   if (!matches) return res.status(401).json({ message: "Invalid email or password" });
-  if (env.EMAIL_VERIFICATION_REQUIRED && !user.isVerified) return res.status(403).json({ message: "Verify your email before logging in" });
-  if (user.isBlocked) return res.status(403).json({ message: "Your account is blocked" });
+
+  if (env.EMAIL_VERIFICATION_REQUIRED && !user.isVerified) {
+    return res.status(403).json({ message: "Verify your email before logging in" });
+  }
 
   setSessionCookie(res, accessTokenFor(user), parsed.data.rememberMe);
   res.json({ user: sanitizeUser(user) });

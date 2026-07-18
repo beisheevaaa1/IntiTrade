@@ -52,7 +52,15 @@ export function Login() {
 
         {error && (
           <div className="bg-red-50 text-red-600 p-3 rounded-xl text-sm border border-red-100 text-center">
-            {error}
+            <p className="font-medium">{error}</p>
+            {error === "Verify your email before logging in" && (
+              <Link
+                to={`/verify-email?email=${encodeURIComponent(account)}`}
+                className="block mt-2 font-bold text-primary underline hover:text-red-700"
+              >
+                Go to Verification Page &rarr;
+              </Link>
+            )}
           </div>
         )}
         
@@ -60,20 +68,18 @@ export function Login() {
           <div className="space-y-4">
             <div>
               <label htmlFor="account" className="block text-sm font-medium text-gray-700 mb-1">
-                INTI account
+                INTI account (Student ID or Official Email)
               </label>
               <Input
                 id="account"
                 name="account"
                 type="text"
-                inputMode="email"
                 autoComplete="username"
                 required
                 value={account}
                 onChange={(e) => setAccount(e.target.value)}
-                placeholder="i00008872@student.newinti.edu.my"
+                placeholder="e.g., i00008872 or i00008872@student.newinti.edu.my"
               />
-              <p className="mt-1 text-xs text-muted-foreground">You can also enter only your student ID, for example i00008872.</p>
             </div>
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">

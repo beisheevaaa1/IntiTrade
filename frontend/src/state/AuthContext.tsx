@@ -6,7 +6,7 @@ type AuthContextValue = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
-  register: (name: string, email: string, phone: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, phone: string, password: string, accountType?: string, faculty?: string) => Promise<{ requiresVerification: boolean; verificationToken?: string; verificationCode?: string }>;
   verifyEmail: (token: string) => Promise<void>;
   resendVerification: (email: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -21,8 +21,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Remove credentials left by older builds. Authentication now uses an
-    // HttpOnly, Secure cookie that frontend JavaScript cannot read or export.
     localStorage.removeItem("marketplace_token");
     localStorage.removeItem("isLoggedIn");
     api.get("/auth/me")
@@ -43,12 +41,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(response.data.user);
       return response.data.user;
     },
-    async register(name, email, phone, password) {
-      const response = await api.post("/auth/register", { name, email, phone, password });
+    async register(name, email, phone, password, accountType = "STUDENT", faculty = "") {
+      const response = await api.post("/auth/register", { name, email, phone, password, accountType, faculty });
       if (!response.data.requiresVerification) {
         setUser(response.data.user);
       }
-      return Boolean(response.data.requiresVerification);
+      return {
+        requiresVerification: Boolean(response.data.requiresVerification),
+        verificationToken: response.data.verificationToken,
+        verificationCode: response.data.verificationCode
+      };
     },
     async verifyEmail(verificationToken) {
       const response = await api.post("/auth/verify-email", { token: verificationToken });

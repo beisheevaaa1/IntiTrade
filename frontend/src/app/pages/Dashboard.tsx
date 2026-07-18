@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Eye,
   PlusCircle,
+  Copy,
   Loader2,
   Trash2,
   CheckCircle,
@@ -22,10 +23,14 @@ import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "../components/ui/avatar";
 import { useAuth } from "../../state/AuthContext";
+import { useToast } from "../../state/ToastContext";
+import { PromptModal } from "../components/PromptModal";
+import { DashboardSkeleton } from "../components/DashboardSkeleton";
 import { api, mediaUrl } from "../../api/client";
 import type { Listing } from "../../types";
 
 export function Dashboard() {
+  const { toast } = useToast();
   const navigate = useNavigate();
   const { user, logout, updateUser } = useAuth();
   
@@ -36,6 +41,7 @@ export function Dashboard() {
   const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [privacy, setPrivacy] = useState({ showEmail: user?.showEmail ?? false, showCampusArea: user?.showCampusArea ?? true, allowMessages: user?.allowMessages ?? true, showOnlineStatus: user?.showOnlineStatus ?? true });
   const [activeTab, setActiveTab] = useState<"overview" | "listings" | "transactions" | "archived" | "privacy">("overview");
+  const [promptConfig, setPromptConfig] = useState<any>({ isOpen: false, title: "", onSubmit: () => {} });
 
   const fetchDashboardData = async () => {
     setLoading(true);
@@ -64,10 +70,10 @@ export function Dashboard() {
     try {
       await api.delete(`/community/blocks/${userId}`);
       setBlockedUsers((current) => current.filter((block) => block.blockedId !== userId));
-      alert("User unblocked successfully.");
+      toast.success("User unblocked successfully.");
     } catch (err) {
       console.error("Error unblocking user:");
-      alert("Failed to unblock user.");
+      toast.error("Failed to unblock user.");
     }
   };
 
@@ -86,31 +92,68 @@ export function Dashboard() {
       setListings(listings.map(l => l.id === id ? { ...l, status: status as any } : l));
     } catch (err) {
       console.error("Error updating status:");
-      alert("Failed to update status.");
+      toast.error("Failed to update status.");
     }
   };
 
   const updateTransaction = async (id: string, status: "COMPLETED" | "CANCELLED" | "DISPUTED") => {
-    const reason = status === "DISPUTED" ? window.prompt("What went wrong?") : undefined;
-    if (status === "DISPUTED" && !reason) return;
-    const response = await api.patch(`/transactions/${id}/status`, { status, reason });
+    if (status === "DISPUTED") {
+      setPromptConfig({
+        isOpen: true,
+        title: "Report Issue / Dispute",
+        description: "What went wrong with this transaction? Moderation will review.",
+        placeholder: "Describe the meetup or item problem...",
+        onSubmit: async (reason: string) => {
+          const response = await api.patch(`/transactions/${id}/status`, { status, reason });
+          setTransactions((current) => current.map((transaction) => transaction.id === id ? response.data.transaction : transaction));
+          void fetchDashboardData();
+        }
+      });
+      return;
+    }
+    const response = await api.patch(`/transactions/${id}/status`, { status });
     setTransactions((current) => current.map((transaction) => transaction.id === id ? response.data.transaction : transaction));
     void fetchDashboardData();
   };
 
-  const leaveReview = async (transactionId: string) => {
-    const value = window.prompt("Rate this seller from 1 to 5");
-    const rating = Number(value);
-    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return;
-    const comment = window.prompt("Add a short comment (optional)") || undefined;
-    await api.post(`/transactions/${transactionId}/review`, { rating, comment });
-    void fetchDashboardData();
+  const leaveReview = (transactionId: string) => {
+    setPromptConfig({
+      isOpen: true,
+      title: "Rate Seller (1 to 5)",
+      description: "Enter a number from 1 (Poor) to 5 (Excellent)",
+      placeholder: "5",
+      isTextarea: false,
+      onSubmit: async (value: string) => {
+        const rating = Number(value);
+        if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+          toast.error("Please enter a valid rating between 1 and 5");
+          return;
+        }
+        setPromptConfig({
+          isOpen: true,
+          title: "Leave a Review Comment",
+          description: "Share a short note about your meetup or item (optional)",
+          placeholder: "Great communication, item exactly as described!",
+          isTextarea: true,
+          required: false,
+          onSubmit: async (comment: string) => {
+            try {
+              await api.post(`/transactions/${transactionId}/review`, { rating, comment: comment || undefined });
+              toast.success("Review submitted! Thank you for feedback.");
+              void fetchDashboardData();
+            } catch (err) {
+              toast.error("Failed to submit review.");
+            }
+          }
+        });
+      }
+    });
   };
 
   const savePrivacy = async () => {
     const response = await api.patch("/auth/profile", privacy);
     updateUser(response.data.user);
-    alert("Privacy preferences saved.");
+    toast.success("Privacy preferences saved.");
   };
 
   // Calculations
@@ -123,11 +166,7 @@ export function Dashboard() {
   const profileSubtitle = user?.role === "ADMIN" ? "Administrator" : user?.faculty || "Student";
 
   if (loading) {
-    return (
-      <div className="flex-grow flex items-center justify-center py-24 bg-gray-50">
-        <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   return (
@@ -513,15 +552,26 @@ export function Dashboard() {
         
         <div className="flex gap-2 sm:self-center self-end mt-2 sm:mt-0 items-center">
           {(item.status === "ACTIVE" || item.status === "PENDING" || item.status === "REJECTED") && (
-            <Link to={`/edit-listing/${item.id}`}>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 text-xs font-semibold border-amber-200 text-amber-700 hover:bg-amber-50"
-              >
-                Edit
-              </Button>
-            </Link>
+            <>
+              <Link to={`/edit-listing/${item.id}`}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-semibold border-amber-200 text-amber-700 hover:bg-amber-50"
+                >
+                  Edit
+                </Button>
+              </Link>
+              <Link to={`/create-listing?duplicateId=${item.id}`} title="Duplicate / Repost this listing">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1 border-purple-200 text-purple-700 hover:bg-purple-50 font-semibold"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Repost
+                </Button>
+              </Link>
+            </>
           )}
           {item.status === "ACTIVE" && (
             <>

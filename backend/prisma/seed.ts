@@ -10,8 +10,9 @@ if (process.env.ALLOW_DESTRUCTIVE_SEED !== "true") {
 
 function requiredSeedValue(name: "SEED_ADMIN_EMAIL" | "SEED_ADMIN_PASSWORD" | "SEED_STUDENT_PASSWORD") {
   const value = process.env[name]?.trim();
-  if (!value) throw new Error(`${name} is required for development seeding`);
-  return value;
+  if (value) return value;
+  if (name === "SEED_ADMIN_EMAIL") return "admin@newinti.edu.my";
+  throw new Error(`${name} is required for development seeding`);
 }
 
 const seedAdminEmail = requiredSeedValue("SEED_ADMIN_EMAIL").toLowerCase();
@@ -217,9 +218,10 @@ async function main() {
   await prisma.user.create({
     data: {
       email: seedAdminEmail,
-      name: "Campus Administrator",
+      name: "INTI Campus Administrator & Staff",
       passwordHash: adminPassword,
       role: Role.ADMIN,
+      faculty: "INTI Staff • Campus Administration",
       isVerified: true
     }
   });
