@@ -364,8 +364,8 @@ export function AdminPage() {
     }
   };
 
-  // Group Students by ID Range (e.g., Intake ranges)
-  const getIntakeGroup = (email: string) => {
+  // Group students by ID range for easier demo/admin filtering.
+  const getStudentGroup = (email: string) => {
     const match = email.match(/inti_i(\d+)/);
     if (!match) return "Other";
     const num = parseInt(match[1]);
@@ -382,7 +382,7 @@ export function AdminPage() {
     
     let matchesGroup = true;
     if (selectedGroup !== "ALL") {
-      const group = getIntakeGroup(s.email);
+      const group = getStudentGroup(s.email);
       matchesGroup = group.includes(selectedGroup);
     }
 
@@ -621,7 +621,7 @@ export function AdminPage() {
                   onChange={(e) => setSelectedGroup(e.target.value)}
                   className="h-10 px-3 bg-white border border-border rounded-lg text-sm text-gray-700"
                 >
-                  <option value="ALL">All Intake Groups</option>
+                  <option value="ALL">All Groups</option>
                   <option value="Alpha">Group Alpha (i000001 - i000003)</option>
                   <option value="Beta">Group Beta (i000004 - i000006)</option>
                   <option value="Gamma">Group Gamma (i000007 - i000010)</option>
@@ -638,7 +638,7 @@ export function AdminPage() {
                         <th className="p-4">Student Name</th>
                         <th className="p-4">INTI Email</th>
                         <th className="p-4">Faculty</th>
-                        <th className="p-4">Intake Group</th>
+                        <th className="p-4">Group</th>
                         <th className="p-4">Status</th>
                         <th className="p-4 text-right">Actions</th>
                       </tr>
@@ -658,7 +658,7 @@ export function AdminPage() {
                             <td className="p-4 text-gray-600">{student.faculty || "Not set"}</td>
                             <td className="p-4">
                               <Badge variant="outline" className="bg-gray-50 border-gray-200">
-                                {getIntakeGroup(student.email)}
+                                {getStudentGroup(student.email)}
                               </Badge>
                             </td>
                             <td className="p-4">

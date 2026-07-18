@@ -5,6 +5,14 @@ import { Input } from "../components/ui/input";
 import { ShieldCheck, ArrowLeft, Eye, EyeOff, Mail, Loader2, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../state/AuthContext";
 
+const intiFaculties = [
+  "Faculty of Business and Communications",
+  "Faculty of Engineering & Quantity Surveying",
+  "Faculty of Health and Life Sciences",
+  "Faculty of Data Science and Information Technology (FDSIT)",
+  "Faculty of Education and Liberal Arts (FELA)"
+];
+
 export function Register() {
   const navigate = useNavigate();
   const { register } = useAuth();
@@ -38,7 +46,7 @@ export function Register() {
     }
 
     if (accountType === "STUDENT" && !faculty) {
-      setError("Please select your Faculty or Academic Program");
+      setError("Please select your Faculty");
       return;
     }
 
@@ -135,14 +143,20 @@ export function Register() {
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setAccountType("STUDENT")}
+                  onClick={() => {
+                    setAccountType("STUDENT");
+                    setFaculty("");
+                  }}
                   className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${accountType === "STUDENT" ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-gray-50 text-gray-700 hover:bg-gray-100"}`}
                 >
                   🎓 INTI Student
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAccountType("STAFF")}
+                  onClick={() => {
+                    setAccountType("STAFF");
+                    setFaculty("");
+                  }}
                   className={`p-3 rounded-xl border text-sm font-bold flex items-center justify-center gap-2 transition-all ${accountType === "STAFF" ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-gray-50 text-gray-700 hover:bg-gray-100"}`}
                 >
                   👔 INTI Staff
@@ -152,7 +166,7 @@ export function Register() {
 
             <div>
               <label htmlFor="faculty" className="block text-sm font-medium text-gray-700 mb-1">
-                {accountType === "STUDENT" ? "Faculty / Academic Program *" : "Department / Faculty (Optional)"}
+                {accountType === "STUDENT" ? "Faculty *" : "Department / Faculty (Optional)"}
               </label>
               <select
                 id="faculty"
@@ -161,15 +175,13 @@ export function Register() {
                 required={accountType === "STUDENT"}
                 className="w-full h-11 px-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
               >
-                <option value="">Select your Faculty or Division...</option>
-                <option value="Faculty of Business & Communications">Faculty of Business & Communications (FBC)</option>
-                <option value="Faculty of Computing & Information Technologies">Faculty of Computing & Information Technologies (FCI)</option>
-                <option value="Faculty of Engineering & Quantitative Studies">Faculty of Engineering & Quantitative Studies (FEQS)</option>
-                <option value="Faculty of Health & Life Sciences">Faculty of Health & Life Sciences (FHLS)</option>
-                <option value="Faculty of Art & Design">Faculty of Art & Design (FAD)</option>
-                <option value="American Degree Transfer Program">American Degree Transfer Program (AUP)</option>
-                <option value="Center of Pre-University Studies">Center of Pre-University Studies (CPUS)</option>
-                <option value="Campus Staff / Administration">Campus Staff / Administration</option>
+                <option value="">{accountType === "STUDENT" ? "Select your Faculty..." : "Select department/faculty..."}</option>
+                {intiFaculties.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+                {accountType === "STAFF" && (
+                  <option value="Campus Staff / Administration">Campus Staff / Administration</option>
+                )}
               </select>
             </div>
 
