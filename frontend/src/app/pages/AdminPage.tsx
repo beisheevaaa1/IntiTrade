@@ -32,6 +32,8 @@ import { useToast } from "../../state/ToastContext";
 import { api, mediaUrl } from "../../api/client";
 import type { User, Listing, Report, Transaction, Announcement, Pagination, SupportTicket, SupportTicketMessage, SupportTicketPriority, SupportTicketStatus } from "../../types";
 
+const isVideoUrl = (url: string) => /\.(mp4|mov|webm|ogg)$/i.test(url);
+
 export function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -524,6 +526,42 @@ export function AdminPage() {
                         <div className="flex justify-between items-start gap-4">
                           <h3 className="font-bold text-lg text-foreground">{item.title}</h3>
                           <span className="text-primary font-bold text-lg whitespace-nowrap">RM {parseFloat(item.price).toFixed(2)}</span>
+                        </div>
+                        <div className="rounded-2xl border border-border bg-gray-50 p-3">
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-gray-600">Listing media</p>
+                            <span className="text-[11px] text-muted-foreground">{item.images?.length || 0} file{item.images?.length === 1 ? "" : "s"}</span>
+                          </div>
+                          {item.images?.length ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {item.images.map((image, index) => {
+                                const src = mediaUrl(image.url);
+                                return (
+                                  <a
+                                    key={image.id || image.url}
+                                    href={src}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="group relative aspect-square overflow-hidden rounded-xl border border-border bg-white"
+                                    title={`Open media ${index + 1}`}
+                                  >
+                                    {isVideoUrl(image.url) ? (
+                                      <video src={src} className="w-full h-full object-cover" muted playsInline />
+                                    ) : (
+                                      <img src={src} alt={`${item.title} media ${index + 1}`} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                    )}
+                                    <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                      {index === 0 ? "Cover" : `#${index + 1}`}
+                                    </span>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white py-8 text-xs text-muted-foreground">
+                              No media uploaded for this listing.
+                            </div>
+                          )}
                         </div>
                         <p className="text-sm text-gray-600 line-clamp-3">{item.description}</p>
                         <div className="text-xs text-muted-foreground space-y-1">
