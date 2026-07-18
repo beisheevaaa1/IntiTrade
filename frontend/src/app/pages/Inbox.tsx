@@ -249,7 +249,9 @@ export function Inbox() {
   // Join room when conversation is selected
   useEffect(() => {
     if (activeConversation && socketRef.current) {
-      socketRef.current.emit("conversation:join", activeConversation.id);
+      socketRef.current.emit("conversation:join", activeConversation.id, () => {
+        window.dispatchEvent(new Event("intitrade:messages-changed"));
+      });
       setMessages(activeConversation.messages || []);
       setIsPartnerTyping(false); // Reset typing status when switching rooms
     }

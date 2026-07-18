@@ -36,7 +36,7 @@ export function Dashboard() {
   
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [conversationsCount, setConversationsCount] = useState(0);
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [transactions, setTransactions] = useState<import("../../types").Transaction[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<any[]>([]);
   const [privacy, setPrivacy] = useState({ showEmail: user?.showEmail ?? false, showCampusArea: user?.showCampusArea ?? true, allowMessages: user?.allowMessages ?? true, showOnlineStatus: user?.showOnlineStatus ?? true });
@@ -50,9 +50,13 @@ export function Dashboard() {
       const listingsRes = await api.get("/listings/mine");
       setListings(listingsRes.data.listings || []);
 
-      // Fetch conversations count
+      // Fetch unread messages count
       const convsRes = await api.get("/conversations");
-      setConversationsCount(convsRes.data.conversations?.length || 0);
+      const unread = (convsRes.data.conversations || [])
+        .flatMap((conversation: any) => conversation.messages || [])
+        .filter((message: any) => !message.readAt && message.sender?.id !== user?.id)
+        .length;
+      setUnreadMessagesCount(unread);
       const transactionsRes = await api.get("/transactions");
       setTransactions(transactionsRes.data.transactions || []);
 
@@ -83,7 +87,9 @@ export function Dashboard() {
       return;
     }
     fetchDashboardData();
-  }, [navigate, user]);
+    window.addEventListener("intitrade:messages-changed", fetchDashboardData);
+    return () => window.removeEventListener("intitrade:messages-changed", fetchDashboardData);
+  }, [navigate, user?.id]);
 
   const handleUpdateStatus = async (id: string, status: string) => {
     try {
@@ -228,9 +234,9 @@ export function Dashboard() {
           <Link to="/inbox" className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-100 text-gray-700 font-medium text-sm shrink-0">
             <MessageSquare className="h-5 w-5" />
             <span>Messages</span>
-            {conversationsCount > 0 && (
+            {unreadMessagesCount > 0 && (
               <span className="ml-auto bg-primary text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full">
-                {conversationsCount}
+                {unreadMessagesCount}
               </span>
             )}
           </Link>
