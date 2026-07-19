@@ -211,7 +211,7 @@ async function main() {
 
   const meetupPoints = await Promise.all([
     prisma.meetupPoint.create({ data: { name: "Main Library Entrance", description: "Covered, staffed entrance with CCTV", campusArea: "Main Campus" } }),
-    prisma.meetupPoint.create({ data: { name: "Student Centre Help Desk", description: "Busy public lobby beside the help desk", campusArea: "Student Centre" } }),
+    prisma.meetupPoint.create({ data: { name: "Student Centre Entrance", description: "Busy public lobby near the entrance", campusArea: "Student Centre" } }),
     prisma.meetupPoint.create({ data: { name: "Cafeteria Main Entrance", description: "Daytime meetup point near campus security", campusArea: "Cafeteria" } })
   ]);
 

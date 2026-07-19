@@ -26,10 +26,11 @@ const conditionsList = [
 
 const locationsList = [
   "Main Campus Library",
-  "Student Center",
+  "Student Centre",
   "Cafeteria",
-  "Dormitory Block A",
-  "Dormitory Block B",
+  "Main Lobby",
+  "Hostel Block A",
+  "Hostel Block E",
   "Faculty Office Building",
   "Online"
 ];
@@ -47,7 +48,7 @@ export function CreateListing() {
   const [price, setPrice] = useState("");
   const [type, setType] = useState<ListingType>("PRODUCT");
   const [condition, setCondition] = useState("GOOD");
-  const [location, setLocation] = useState("Student Center");
+  const [location, setLocation] = useState("Student Centre");
   const [meetupPreference, setMeetupPreference] = useState(locationsList[0]);
   const [isNegotiable, setIsNegotiable] = useState(false);
   const [showPhone, setShowPhone] = useState(false);
@@ -798,7 +799,7 @@ export function CreateListing() {
                   <Label htmlFor="location">
                     {meetupPreference === "Online" 
                       ? "Online meeting platform or contact method (e.g. MS Teams, Zoom, WhatsApp) *" 
-                      : "Specific Spot Details (e.g. Block B Table 4) *"}
+                      : "Specific Spot Details (e.g. Hostel Block E, Table 4) *"}
                   </Label>
                   <Input 
                     id="location" 
