@@ -29,7 +29,6 @@ export function Register() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [verificationToken, setVerificationToken] = useState<string | undefined>();
   const [verificationCode, setVerificationCode] = useState<string | undefined>();
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -55,7 +54,6 @@ export function Register() {
     try {
       const res = await register(name, email, phone, password, accountType, faculty);
       if (res.requiresVerification) {
-        setVerificationToken(res.verificationToken);
         setVerificationCode(res.verificationCode);
         setIsSubmitted(true);
       } else {
@@ -92,12 +90,12 @@ export function Register() {
                 {verificationCode}
               </div>
               <p className="text-xs text-amber-700 leading-relaxed">
-                Use this code below or continue to the verification page.
+                Remember or copy this demo code, then enter it on the verification page.
               </p>
             </div>
           )}
           <div className="pt-4 space-y-3">
-            <Link to={`/verify-email?email=${encodeURIComponent(email)}&token=${verificationToken || ""}&code=${verificationCode || ""}`}>
+            <Link to={`/verify-email?email=${encodeURIComponent(email)}`}>
               <Button className="w-full rounded-xl h-12 font-bold shadow-md">
                 Enter Verification Page Now &rarr;
               </Button>

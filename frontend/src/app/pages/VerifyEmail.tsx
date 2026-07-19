@@ -10,8 +10,9 @@ export function VerifyEmail() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { verifyEmail, resendVerification } = useAuth();
-  const [token, setToken] = useState(params.get("token") || params.get("code") || "");
+  const [token, setToken] = useState(params.get("token") || "");
   const [email, setEmail] = useState(params.get("email") ?? "");
+  const [demoCode, setDemoCode] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,7 +56,10 @@ export function VerifyEmail() {
     try {
       const challenge = await resendVerification(email);
       const nextToken = challenge.verificationToken || challenge.verificationCode;
-      if (nextToken) setToken(nextToken);
+      if (nextToken) {
+        setDemoCode(nextToken);
+        setToken("");
+      }
       setMessage(challenge.message);
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not send verification email. Try again later."));
@@ -91,6 +95,18 @@ export function VerifyEmail() {
         {message && (
           <div className="bg-green-50 text-green-700 p-3 rounded-xl text-sm border border-green-100 text-center">
             {message}
+          </div>
+        )}
+        {demoCode && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2 text-center">
+            <div className="flex items-center justify-center gap-2 text-xs font-bold text-amber-800 uppercase tracking-wider">
+              Demo verification code
+              <span className="bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono text-[10px]">DEMO</span>
+            </div>
+            <div className="text-3xl font-mono font-black tracking-widest text-amber-950 bg-white py-3 rounded-lg border border-amber-200 shadow-inner">
+              {demoCode}
+            </div>
+            <p className="text-xs text-amber-700">Enter this code in the field below to verify the account.</p>
           </div>
         )}
         

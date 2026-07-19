@@ -43,7 +43,8 @@ test.describe("authentication UI", () => {
     await page.getByRole("button", { name: "Check Email Verification" }).click();
 
     await expect(page.getByText("If the account requires verification, a new code has been generated.")).toBeVisible();
-    await expect(page.getByLabel("Verification Code")).toHaveValue("482731");
+    await expect(page.getByText("482731", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Verification Code")).toHaveValue("");
     expect(api.resendVerificationRequests).toEqual([{ email: "i00008872" }]);
   });
 
@@ -90,7 +91,7 @@ test.describe("authentication UI", () => {
     await expect(page.getByText("482731", { exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: /Enter Verification Page Now/ })).toHaveAttribute(
       "href",
-      "/verify-email?email=e2e%40example.test&token=482731&code=482731",
+      "/verify-email?email=e2e%40example.test",
     );
   });
 
