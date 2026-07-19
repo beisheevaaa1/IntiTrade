@@ -6,7 +6,7 @@ import { env } from "../env.js";
 import { prisma } from "../prisma.js";
 import { requireAuth } from "../middleware/auth.js";
 import { createRateLimit } from "../middleware/rateLimit.js";
-import { createToken, hashToken, sendVerificationEmail } from "../utils/email.js";
+import { createToken, createVerificationCode, hashToken, sendVerificationEmail } from "../utils/email.js";
 import { sanitizeUser, signAccessToken } from "../utils/auth.js";
 import { getAllowedEmailDomains, isAllowedEmail, isPasswordWithinBcryptLimit, normalizeIntiAccountIdentifier, normalizePhone } from "../utils/validation.js";
 import { clearSessionCookie, setSessionCookie } from "../utils/sessionCookie.js";
@@ -15,6 +15,15 @@ import { lockMessageAccounts } from "../utils/messageLocks.js";
 
 const router = Router();
 const allowedEmailDomains = getAllowedEmailDomains(env.ALLOWED_EMAIL_DOMAINS, env.ALLOWED_EMAIL_DOMAIN);
+const usesScreenVerification = env.EMAIL_VERIFICATION_DELIVERY === "screen";
+
+function createVerificationCredential() {
+  return usesScreenVerification ? createVerificationCode() : createToken();
+}
+
+function verificationCredentialHash(email: string, credential: string) {
+  return hashToken(usesScreenVerification ? `${email}:${credential}` : credential);
+}
 const studentEmailDomain = "student.newinti.edu.my";
 
 const accountEmailSchema = z.string()
@@ -45,7 +54,7 @@ const registrationIpRateLimit = createRateLimit({
 const verificationRateLimit = createRateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  key: (req) => `${req.ip}:${String(req.body?.email || req.body?.token || "").toLowerCase()}`,
+  key: (req) => `${req.ip}:${String(req.body?.email || "").toLowerCase()}`,
   message: "Too many verification attempts. Please try again later."
 });
 
@@ -85,7 +94,7 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
   }
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12);
-  const rawVerificationToken = env.EMAIL_VERIFICATION_REQUIRED ? createToken() : null;
+  const rawVerificationToken = env.EMAIL_VERIFICATION_REQUIRED ? createVerificationCredential() : null;
   const facultyText = parsed.data.faculty
     ? `${parsed.data.accountType === "STAFF" ? "INTI Staff" : "INTI Student"} • ${parsed.data.faculty}`
     : (parsed.data.accountType === "STAFF" ? "INTI Staff" : "INTI Student");
@@ -106,7 +115,7 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
       if (rawVerificationToken) {
         await tx.emailVerificationToken.create({
           data: {
-            token: hashToken(rawVerificationToken),
+            token: verificationCredentialHash(email, rawVerificationToken),
             userId: created.id,
             expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24)
           }
@@ -115,26 +124,25 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
       return created;
     });
 
-    if (rawVerificationToken) {
+    if (rawVerificationToken && !usesScreenVerification) {
       try {
         await sendVerificationEmail(user.email, rawVerificationToken);
       } catch (error) {
         console.error(JSON.stringify({ level: "error", event: "verification_email_failed", errorType: error instanceof Error ? error.name : "UnknownError" }));
         return res.status(503).json({
           message: "Your account was created, but the verification email could not be sent. Please use resend verification later.",
-          requiresVerification: true,
-          verificationToken: rawVerificationToken,
-          verificationCode: rawVerificationToken.slice(0, 6)
+          requiresVerification: true
         });
       }
     }
 
     if (!rawVerificationToken) setSessionCookie(res, accessTokenFor(user));
+    const visibleCredential = rawVerificationToken && usesScreenVerification ? rawVerificationToken : undefined;
     res.status(201).json({
       user: sanitizeUser(user),
       requiresVerification: Boolean(rawVerificationToken),
-      verificationToken: rawVerificationToken || undefined,
-      verificationCode: rawVerificationToken ? rawVerificationToken.slice(0, 6) : undefined
+      verificationToken: visibleCredential,
+      verificationCode: visibleCredential
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -147,10 +155,17 @@ router.post("/register", authIpRateLimit, registrationIpRateLimit, authAccountRa
 router.post("/verify-email", authIpRateLimit, verificationRateLimit, async (req, res) => {
   if (!env.EMAIL_VERIFICATION_REQUIRED) return res.status(404).json({ message: "Email verification is not enabled" });
 
-  const parsed = z.object({ token: z.string().min(32).max(200) }).safeParse(req.body);
+  const parsed = z.object({
+    token: z.string().trim().min(6).max(200),
+    email: accountEmailSchema.optional()
+  }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "Verification token is required" });
+  if (usesScreenVerification && !parsed.data.email) {
+    return res.status(400).json({ message: "Email is required with a verification code" });
+  }
 
-  const record = await prisma.emailVerificationToken.findUnique({ where: { token: hashToken(parsed.data.token) } });
+  const verificationHash = verificationCredentialHash(parsed.data.email?.toLowerCase() || "", parsed.data.token);
+  const record = await prisma.emailVerificationToken.findUnique({ where: { token: verificationHash } });
   if (!record || record.expiresAt < new Date()) return res.status(400).json({ message: "Invalid or expired verification token" });
 
   const user = await prisma.$transaction(async (tx) => {
@@ -167,21 +182,29 @@ router.post("/resend-verification", authIpRateLimit, verificationRateLimit, asyn
   const parsed = z.object({ email: accountEmailSchema }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ message: "A valid email is required" });
 
-  const genericResponse = { message: "If the account requires verification, a new email has been sent." };
+  const genericResponse = {
+    message: usesScreenVerification
+      ? "If the account requires verification, a new code has been generated."
+      : "If the account requires verification, a new email has been sent."
+  };
   if (!env.EMAIL_VERIFICATION_REQUIRED) return res.json(genericResponse);
 
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email.toLowerCase() } });
   if (!user || user.isVerified || user.isBlocked) return res.json(genericResponse);
 
-  const rawToken = createToken();
+  const rawToken = createVerificationCredential();
   await prisma.$transaction([
     prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } }),
     prisma.emailVerificationToken.create({
-      data: { token: hashToken(rawToken), userId: user.id, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24) }
+      data: { token: verificationCredentialHash(user.email, rawToken), userId: user.id, expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24) }
     })
   ]);
-  await sendVerificationEmail(user.email, rawToken);
-  res.json(genericResponse);
+  if (!usesScreenVerification) await sendVerificationEmail(user.email, rawToken);
+  res.json({
+    ...genericResponse,
+    verificationToken: usesScreenVerification ? rawToken : undefined,
+    verificationCode: usesScreenVerification ? rawToken : undefined
+  });
 });
 
 router.post("/login", authIpRateLimit, authAccountRateLimit, async (req, res) => {

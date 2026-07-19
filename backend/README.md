@@ -49,8 +49,8 @@ journalctl -u "$unit" --no-pager
 
 Run it manually after a successful deployment, never as a frequent scheduled
 job. It requires `NODE_ENV=production`, the matching deployed app version, email
-verification disabled, and a local PostgreSQL `DATABASE_URL`. It does not use or
-log any existing administrator credential. `SIGINT`, `SIGTERM`, and `SIGHUP`
+verification disabled or configured for on-screen demo codes, and a local PostgreSQL
+`DATABASE_URL`. It does not use or log any existing administrator credential. `SIGINT`, `SIGTERM`, and `SIGHUP`
 abort the active request but allow cleanup to continue with fresh bounded
 cleanup requests.
 

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { AuthUserResponse, RegisterResponse } from "../api/responses";
+import type { AuthUserResponse, RegisterResponse, VerificationChallengeResponse } from "../api/responses";
 import type { User } from "../types";
 
 type AuthContextValue = {
@@ -8,8 +8,8 @@ type AuthContextValue = {
   loading: boolean;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<User>;
   register: (name: string, email: string, phone: string, password: string, accountType?: string, faculty?: string) => Promise<{ requiresVerification: boolean; verificationToken?: string; verificationCode?: string }>;
-  verifyEmail: (token: string) => Promise<void>;
-  resendVerification: (email: string) => Promise<void>;
+  verifyEmail: (token: string, email?: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<VerificationChallengeResponse>;
   logout: () => Promise<void>;
   updateUser: (updated: Partial<User>) => void;
   reloadUser: () => Promise<void>;
@@ -53,12 +53,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         verificationCode: response.data.verificationCode
       };
     },
-    async verifyEmail(verificationToken) {
-      const response = await api.post<AuthUserResponse>("/auth/verify-email", { token: verificationToken });
+    async verifyEmail(verificationToken, email) {
+      const response = await api.post<AuthUserResponse>("/auth/verify-email", { token: verificationToken, email });
       setUser(response.data.user);
     },
     async resendVerification(email) {
-      await api.post("/auth/resend-verification", { email });
+      const response = await api.post<VerificationChallengeResponse>("/auth/resend-verification", { email });
+      return response.data;
     },
     async logout() {
       try {

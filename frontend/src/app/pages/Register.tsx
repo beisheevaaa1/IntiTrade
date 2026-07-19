@@ -78,21 +78,21 @@ export function Register() {
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900">Verify your account</h2>
           <p className="mt-2 text-muted-foreground text-sm">
-            We've generated an account verification requirement for <strong>{email}</strong>. Only verified INTI campus members can trade.
+            A verification step is required for <strong>{email}</strong>. Only verified INTI campus members can trade.
           </p>
           {verificationCode && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left space-y-2 mt-4">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-amber-600" /> Instant Verification Code
+                  <CheckCircle2 className="h-3.5 w-3.5 text-amber-600" /> Verification Code
                 </span>
-                <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono font-bold">READY</span>
+                <span className="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-mono font-bold">DEMO</span>
               </div>
               <div className="text-3xl font-mono font-black tracking-widest text-center text-amber-950 bg-white py-3 rounded-lg border border-amber-200 shadow-inner">
                 {verificationCode}
               </div>
               <p className="text-xs text-amber-700 leading-relaxed">
-                Click below to go to the verification page and complete your signup instantly!
+                Use this code below or continue to the verification page.
               </p>
             </div>
           )}

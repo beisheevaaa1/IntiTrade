@@ -136,6 +136,6 @@ systemctl status intitrade-api.service intitrade-maintenance.service --no-pager
 - Никогда не добавляйте `.env`, SSH private keys, пароли или дампы БД в Git.
 - После утечки credential сначала замените его в рабочей системе, затем согласованно очистите Git history.
 - Production `JWT_SECRET` должен быть уникальным и содержать не менее 32 символов.
-- Регистрация сейчас не требует проверки университета; домены можно ограничить через `ALLOWED_EMAIL_DOMAINS`.
+- Production-регистрация требует демонстрационный код с экрана. Реальную отправку писем можно включить позже через `EMAIL_VERIFICATION_DELIVERY=email` после настройки SMTP.
 
 Репозиторий: https://github.com/beisheevaaa1/IntiTrade

@@ -21,6 +21,7 @@ const schema = z.object({
   JWT_EXPIRES_IN: z.string().default("7d"),
   SESSION_COOKIE_MAX_AGE_SECONDS: z.coerce.number().int().min(300).max(31_536_000).default(604_800),
   EMAIL_VERIFICATION_REQUIRED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
+  EMAIL_VERIFICATION_DELIVERY: z.enum(["email", "screen"]).default("email"),
   ALLOWED_EMAIL_DOMAINS: z.string().default(""),
   ALLOWED_EMAIL_DOMAIN: z.string().optional(),
   CLIENT_URL: z.string().default("http://localhost:5173"),

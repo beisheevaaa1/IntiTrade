@@ -6,12 +6,16 @@ export function createToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+export function createVerificationCode() {
+  return crypto.randomInt(100_000, 1_000_000).toString();
+}
+
 export function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 export async function sendVerificationEmail(email: string, token: string) {
-  const verifyUrl = `${env.CLIENT_URL}/verify-email?token=${token}`;
+  const verifyUrl = `${env.CLIENT_URL}/verify-email?email=${encodeURIComponent(email)}&token=${token}`;
   const transporter = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,

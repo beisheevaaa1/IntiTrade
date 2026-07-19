@@ -247,7 +247,11 @@ async function installApiGuard(page: Page): Promise<MockApiState> {
 
     if (method === "POST" && path === "/auth/resend-verification") {
       state.resendVerificationRequests.push((request.postDataJSON() || {}) as JsonObject);
-      await json(route, 200, { message: "If the account requires verification, a new email has been sent." });
+      await json(route, 200, {
+        message: "If the account requires verification, a new code has been generated.",
+        verificationToken: "482731",
+        verificationCode: "482731",
+      });
       return;
     }
 

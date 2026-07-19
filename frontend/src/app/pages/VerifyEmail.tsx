@@ -21,7 +21,7 @@ export function VerifyEmail() {
     const tokenParam = params.get("token");
     if (tokenParam) {
       setLoading(true);
-      verifyEmail(tokenParam)
+      verifyEmail(tokenParam, params.get("email") || undefined)
         .then(() => navigate("/"))
         .catch(() => setError("Invalid or expired verification token"))
         .finally(() => setLoading(false));
@@ -34,7 +34,7 @@ export function VerifyEmail() {
     setMessage("");
     setLoading(true);
     try {
-      await verifyEmail(token);
+      await verifyEmail(token, email);
       navigate("/");
     } catch (err) {
       setError(getApiErrorMessage(err, "Verification failed. Check your token."));
@@ -47,10 +47,16 @@ export function VerifyEmail() {
     e.preventDefault();
     setError("");
     setMessage("");
+    if (!email.trim()) {
+      setError("Enter your INTI account email first.");
+      return;
+    }
     setResending(true);
     try {
-      await resendVerification(email);
-      setMessage("If this account needs verification, a new email has been sent.");
+      const challenge = await resendVerification(email);
+      const nextToken = challenge.verificationToken || challenge.verificationCode;
+      if (nextToken) setToken(nextToken);
+      setMessage(challenge.message);
     } catch (err) {
       setError(getApiErrorMessage(err, "Could not send verification email. Try again later."));
     } finally {
@@ -73,7 +79,7 @@ export function VerifyEmail() {
           </div>
           <h2 className="text-3xl font-extrabold text-gray-900">Verify your account</h2>
           <p className="mt-2 text-sm text-muted-foreground">
-            Enter the verification code sent to your INTI email address
+            Enter the verification code generated for your INTI account
           </p>
         </div>
 
@@ -89,6 +95,22 @@ export function VerifyEmail() {
         )}
         
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="verification-email" className="block text-sm font-medium text-gray-700 mb-1">
+              INTI account email
+            </label>
+            <Input
+              id="verification-email"
+              name="verification-email"
+              type="text"
+              inputMode="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="i00008872@student.newinti.edu.my"
+            />
+          </div>
           <div>
             <label htmlFor="token" className="block text-sm font-medium text-gray-700 mb-1">
               Verification Code
@@ -124,25 +146,11 @@ export function VerifyEmail() {
         </form>
 
         <div className="mt-6 border-t border-border pt-6 text-center">
-          <form className="space-y-3 text-left" onSubmit={handleResend}>
-            <label htmlFor="verification-email" className="block text-sm font-medium text-gray-700">
-              INTI account email
-            </label>
-            <Input
-              id="verification-email"
-              name="verification-email"
-              type="text"
-              inputMode="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="i00008872@student.newinti.edu.my"
-            />
+          <form className="space-y-3" onSubmit={handleResend}>
             <Button
               type="submit"
               variant="outline"
-              disabled={resending}
+              disabled={resending || !email.trim()}
               className="w-full rounded-xl h-12"
             >
               {resending ? (

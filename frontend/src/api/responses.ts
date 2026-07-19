@@ -30,6 +30,12 @@ export type RegisterResponse = {
   verificationCode?: string;
 };
 
+export type VerificationChallengeResponse = {
+  message: string;
+  verificationToken?: string;
+  verificationCode?: string;
+};
+
 export type AutocompleteResponse = {
   suggestions?: string[];
 };

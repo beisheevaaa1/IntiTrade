@@ -29,7 +29,8 @@ upsert NODE_ENV production
 upsert HOST 127.0.0.1
 upsert PORT "${API_PORT}"
 upsert TRUST_PROXY 1
-upsert EMAIL_VERIFICATION_REQUIRED false
+upsert EMAIL_VERIFICATION_REQUIRED true
+upsert EMAIL_VERIFICATION_DELIVERY screen
 upsert ALLOWED_EMAIL_DOMAINS ""
 upsert ALLOWED_EMAIL_DOMAIN ""
 upsert APP_VERSION "${APP_VERSION:-unknown}"

@@ -42,7 +42,8 @@ test.describe("authentication UI", () => {
     await expect(page.getByLabel("INTI account email")).toHaveValue("i00008872");
     await page.getByRole("button", { name: "Check Email Verification" }).click();
 
-    await expect(page.getByText("If this account needs verification, a new email has been sent.")).toBeVisible();
+    await expect(page.getByText("If the account requires verification, a new code has been generated.")).toBeVisible();
+    await expect(page.getByLabel("Verification Code")).toHaveValue("482731");
     expect(api.resendVerificationRequests).toEqual([{ email: "i00008872" }]);
   });
 
@@ -66,6 +67,31 @@ test.describe("authentication UI", () => {
 
     await expect(page.getByText("Passwords do not match", { exact: true }).first()).toBeVisible();
     expect(api.registrationRequests).toHaveLength(0);
+  });
+
+  test("registration displays the generated demo verification code", async ({ page, api }) => {
+    api.registerStatus = 201;
+    api.registerResponse = {
+      requiresVerification: true,
+      verificationToken: "482731",
+      verificationCode: "482731",
+    };
+    await page.goto("/register");
+
+    await page.getByLabel("Full Name").fill("E2E User");
+    await page.getByLabel("Email", { exact: true }).fill("e2e@example.test");
+    await page.getByLabel("Faculty *").selectOption("Faculty of Data Science and Information Technology (FDSIT)");
+    await page.getByLabel("Phone number").fill("+60123456789");
+    await page.getByLabel("Password", { exact: true }).fill("correct-password");
+    await page.getByLabel("Confirm Password").fill("correct-password");
+    await page.getByRole("button", { name: "Create account" }).click();
+
+    await expect(page.getByRole("heading", { name: "Verify your account" })).toBeVisible();
+    await expect(page.getByText("482731", { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Enter Verification Page Now/ })).toHaveAttribute(
+      "href",
+      "/verify-email?email=e2e%40example.test&token=482731&code=482731",
+    );
   });
 
   test("registration displays server validation and sends the expected phone field", async ({ page, api }) => {

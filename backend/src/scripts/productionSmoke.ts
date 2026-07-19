@@ -238,8 +238,8 @@ function validatePreconditions() {
   invariant(process.env.PRODUCTION_SMOKE_CONFIRM === CONFIRMATION,
     `Refusing to run. Set PRODUCTION_SMOKE_CONFIRM=${CONFIRMATION} explicitly.`);
   invariant(env.NODE_ENV === "production", "Refusing to run outside NODE_ENV=production");
-  invariant(env.EMAIL_VERIFICATION_REQUIRED === false,
-    "Refusing to create test accounts while email verification is enabled; the smoke test must not send email");
+  invariant(env.EMAIL_VERIFICATION_REQUIRED === false || env.EMAIL_VERIFICATION_DELIVERY === "screen",
+    "Refusing to create test accounts when verification could send production email");
   invariant(process.env.PRODUCTION_SMOKE_BASE_URL === CANONICAL_ORIGIN,
     `Refusing to run unless PRODUCTION_SMOKE_BASE_URL is exactly ${CANONICAL_ORIGIN}`);
 
