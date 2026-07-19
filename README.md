@@ -15,6 +15,28 @@ docs/      проектная документация
 
 Требования: Node.js 20+, npm и PostgreSQL 16+.
 
+На Windows весь проект можно запустить одной командой из корня репозитория:
+
+```powershell
+.\manage.ps1
+```
+
+Скрипт устанавливает отсутствующие зависимости, применяет Prisma migrations и запускает backend и frontend в фоне. Доступные команды:
+
+```powershell
+.\manage.ps1 start                 # Запустить проект (команда по умолчанию)
+.\manage.ps1 stop                  # Остановить проект и управляемую Docker PostgreSQL
+.\manage.ps1 restart               # Перезапустить
+.\manage.ps1 status                # Показать состояние
+.\manage.ps1 logs                  # Последние строки логов
+.\manage.ps1 logs -Follow          # Следить за логами
+.\manage.ps1 start -OpenBrowser    # Запустить и открыть сайт
+.\manage.ps1 start -Database docker   # Явно использовать Docker PostgreSQL
+.\manage.ps1 start -Database external # Использовать PostgreSQL из backend/.env
+```
+
+В режиме `auto` существующая доступная PostgreSQL используется без Docker. Если локальная PostgreSQL недоступна, но Docker Desktop запущен, скрипт автоматически настраивает Docker PostgreSQL и сохраняет резервную копию прежнего `backend/.env` в `.manage/`. Для запрета автоматического переключения используйте `-Database external`.
+
 ```bash
 cd backend
 npm ci

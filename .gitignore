@@ -23,6 +23,7 @@ backend/.previous-runtime-release
 **/*.log
 **/.DS_Store
 **/.vite/
+.manage/
 
 # Private credentials and key material
 **/id_rsa
