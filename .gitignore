@@ -1,10 +1,10 @@
-# Временные папки/архивы в корне
+# Temporary folders/archives in the root
 archive/
 archive_old_monorepo/
 design_new/
 IntiTrade (1).zip
 
-# Зависимости и сборка в подпроектах
+# Dependencies and build output in subprojects
 **/node_modules/
 **/dist/
 frontend/.releases/

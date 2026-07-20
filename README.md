@@ -1,41 +1,41 @@
 # IntiTrade
 
-Университетская торговая площадка для студентов INTI: товары, курсы и услуги, объявления, личные сообщения, рейтинги, избранное, поддержка и обязательная модерация публикаций.
+A university marketplace for INTI students: products, courses and services, announcements, private messaging, ratings, favorites, support, and mandatory moderation of postings.
 
-## Структура
+## Structure
 
 ```text
 backend/   Express + TypeScript + Prisma + PostgreSQL + Socket.IO
 frontend/  React + Vite + Tailwind CSS + Playwright
-deploy/    атомарные релизы, Nginx, systemd, backup и monitoring
-docs/      проектная документация
+deploy/    atomic releases, Nginx, systemd, backup and monitoring
+docs/      project documentation
 ```
 
-## Локальный запуск
+## Local setup
 
-Требования: Node.js 20+, npm и PostgreSQL 16+.
+Requirements: Node.js 20+, npm, and PostgreSQL 16+.
 
-На Windows весь проект можно запустить одной командой из корня репозитория:
+On Windows the entire project can be started with a single command from the repository root:
 
 ```powershell
 .\manage.ps1
 ```
 
-Скрипт устанавливает отсутствующие зависимости, применяет Prisma migrations и запускает backend и frontend в фоне. Доступные команды:
+The script installs any missing dependencies, applies Prisma migrations, and starts the backend and frontend in the background. Available commands:
 
 ```powershell
-.\manage.ps1 start                 # Запустить проект (команда по умолчанию)
-.\manage.ps1 stop                  # Остановить проект и управляемую Docker PostgreSQL
-.\manage.ps1 restart               # Перезапустить
-.\manage.ps1 status                # Показать состояние
-.\manage.ps1 logs                  # Последние строки логов
-.\manage.ps1 logs -Follow          # Следить за логами
-.\manage.ps1 start -OpenBrowser    # Запустить и открыть сайт
-.\manage.ps1 start -Database docker   # Явно использовать Docker PostgreSQL
-.\manage.ps1 start -Database external # Использовать PostgreSQL из backend/.env
+.\manage.ps1 start                 # Start the project (default command)
+.\manage.ps1 stop                  # Stop the project and the managed Docker PostgreSQL
+.\manage.ps1 restart               # Restart
+.\manage.ps1 status                # Show status
+.\manage.ps1 logs                  # Last log lines
+.\manage.ps1 logs -Follow          # Follow the logs
+.\manage.ps1 start -OpenBrowser    # Start and open the site
+.\manage.ps1 start -Database docker   # Explicitly use Docker PostgreSQL
+.\manage.ps1 start -Database external # Use the PostgreSQL from backend/.env
 ```
 
-В режиме `auto` существующая доступная PostgreSQL используется без Docker. Если локальная PostgreSQL недоступна, но Docker Desktop запущен, скрипт автоматически настраивает Docker PostgreSQL и сохраняет резервную копию прежнего `backend/.env` в `.manage/`. Для запрета автоматического переключения используйте `-Database external`.
+In `auto` mode, an existing available PostgreSQL is used without Docker. If a local PostgreSQL is unavailable but Docker Desktop is running, the script automatically configures Docker PostgreSQL and saves a backup of the previous `backend/.env` in `.manage/`. To disable automatic switching, use `-Database external`.
 
 ```bash
 cd backend
@@ -46,7 +46,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-В другом терминале:
+In another terminal:
 
 ```bash
 cd frontend
@@ -54,13 +54,13 @@ npm ci
 npm run dev
 ```
 
-Backend доступен на `http://localhost:4000`, frontend — на `http://localhost:5173`, Swagger — на `http://localhost:4000/api/docs`.
+The backend is available at `http://localhost:4000`, the frontend at `http://localhost:5173`, and Swagger at `http://localhost:4000/api/docs`.
 
-Авторизация браузера использует host-only cookie `intitrade_session` с `HttpOnly` и `SameSite=Lax`; в production также включается `Secure`. Bearer JWT оставлен только для совместимости API-клиентов. Frontend не хранит токен в `localStorage`.
+Browser authentication uses a host-only cookie `intitrade_session` with `HttpOnly` and `SameSite=Lax`; in production `Secure` is also enabled. Bearer JWT is kept only for compatibility with API clients. The frontend does not store the token in `localStorage`.
 
-## Тестовые данные
+## Test data
 
-Seed полностью удаляет данные, поэтому он запрещён в production и запускается только с явным подтверждением. Не используйте реальные пароли:
+The seed completely wipes the data, so it is forbidden in production and only runs with explicit confirmation. Do not use real passwords:
 
 ```bash
 ALLOW_DESTRUCTIVE_SEED=true \
@@ -70,9 +70,9 @@ SEED_STUDENT_PASSWORD='replace-with-another-test-password' \
 npm run seed
 ```
 
-Пароли seed должны иметь длину 12–72 байта. В репозитории нет стандартного пароля администратора.
+Seed passwords must be 12–72 bytes long. There is no default administrator password in the repository.
 
-## Проверки
+## Checks
 
 ```bash
 cd backend
@@ -88,54 +88,54 @@ npm run test:e2e
 npm audit --audit-level=high
 ```
 
-Playwright проверяет desktop Chromium и мобильный Pixel 7. API в E2E подменяется, поэтому тесты не создают production-данные.
+Playwright tests desktop Chromium and mobile Pixel 7. The API is mocked in E2E, so the tests do not create production data.
 
-GitHub Actions дополнительно проверяет Prisma, бюджет начального JavaScript, отсутствие новых credentials и каждые 15 минут выполняет production smoke-check.
+GitHub Actions additionally checks Prisma, the initial JavaScript budget, the absence of new credentials, and runs a production smoke check every 15 minutes.
 
-## Docker только для локальной PostgreSQL
+## Docker for local PostgreSQL only
 
 ```bash
 cp docker-compose.env.example .env
-# задайте уникальный POSTGRES_PASSWORD в .env
+# set a unique POSTGRES_PASSWORD in .env
 docker compose up -d postgres
 ```
 
-PostgreSQL публикуется только на `127.0.0.1`; файл `.env` не должен попадать в Git.
+PostgreSQL is published only on `127.0.0.1`; the `.env` file must not be committed to Git.
 
-## Production и наблюдаемость
+## Production and observability
 
-- `GET /api/health/live` — процесс API работает.
-- `GET /api/health/ready` — API и PostgreSQL готовы; результат кратковременно кешируется.
-- Админ-панель → **System Health** — запросы, память, WebSocket и обезличенные ошибки.
-- Админ-панель → **Audit Log** — неизменяемый журнал модерации.
-- Админ-панель → **Support** — обращения пользователей и ответы поддержки.
-- `/support` — приватные обращения пользователя.
-- Публикация появляется на площадке только после одобрения администратором.
+- `GET /api/health/live` — the API process is running.
+- `GET /api/health/ready` — the API and PostgreSQL are ready; the result is briefly cached.
+- Admin panel → **System Health** — requests, memory, WebSocket, and anonymized errors.
+- Admin panel → **Audit Log** — an immutable moderation journal.
+- Admin panel → **Support** — user tickets and support replies.
+- `/support` — the user's private tickets.
+- A posting appears on the marketplace only after admin approval.
 
-Production API работает от отдельного системного пользователя `intitrade`, слушает только localhost и запускается через systemd. Nginx добавляет rate limits, CSP, HSTS и остальные browser security headers.
+The production API runs as a dedicated system user `intitrade`, listens on localhost only, and is started via systemd. Nginx adds rate limits, CSP, HSTS, and the remaining browser security headers.
 
-## Деплой
+## Deployment
 
-Перед запуском локально задаются `SSH_HOST`, `SSH_USER`, `SSH_HOST_FINGERPRINTS` и один способ входа: `SSH_PRIVATE_KEY_PATH` (предпочтительно) либо `SSH_PASSWORD`. При необходимости также задаются `SERVER_PROJECT_DIR` и `SERVER_API_PORT`.
+Before running, set `SSH_HOST`, `SSH_USER`, `SSH_HOST_FINGERPRINTS` locally, and one login method: `SSH_PRIVATE_KEY_PATH` (preferred) or `SSH_PASSWORD`. If needed, also set `SERVER_PROJECT_DIR` and `SERVER_API_PORT`.
 
 ```bash
 node backend/ssh_preflight.js
 node backend/ssh_deploy.js
 ```
 
-Деплой закрепляет проверенные SSH fingerprints, собирает код от изолированного build-пользователя без доступа к production-БД, выполняет тесты, запускает опциональный read-only hook `backend/prisma/predeploy-data-checks.sql`, делает проверенный backup, применяет миграции и атомарно переключает backend/frontend releases. Predeploy hook обязан только читать данные и завершаться ошибкой при нарушении prerequisites; runner дополнительно оборачивает его в PostgreSQL `TRANSACTION READ ONLY`. Проверка выполняется до backup, повторяется сразу после него и ещё раз после остановки writes. Поэтому обычный отказ оставляет старый API и схему без изменений, а две повторные проверки закрывают race с действиями пользователей. Backend-релиз содержит неизменяемый `.schema-compatibility`, а состояние production-схемы и незавершённого перехода хранится отдельно от рабочей копии в `/var/lib/intitrade-deploy`.
+The deployment pins verified SSH fingerprints, builds the code as an isolated build user without access to the production DB, runs the tests, executes the optional read-only hook `backend/prisma/predeploy-data-checks.sql`, takes a verified backup, applies migrations, and atomically switches the backend/frontend releases. The predeploy hook must only read data and must fail if prerequisites are violated; the runner additionally wraps it in a PostgreSQL `TRANSACTION READ ONLY`. The check runs before the backup, is repeated immediately after it, and once more after writes are stopped. Therefore a normal failure leaves the old API and schema unchanged, while the two repeated checks close the race with user actions. The backend release contains an immutable `.schema-compatibility`, and the state of the production schema and of any unfinished transition is stored separately from the working copy in `/var/lib/intitrade-deploy`.
 
-Rollback выбирается по совместимости, а не только по HTTP health-check:
+Rollback is chosen by compatibility, not only by an HTTP health check:
 
-- до начала миграций старый backend остаётся без изменений;
-- после совместимой миграции можно вернуть только релиз с тем же schema marker;
-- после завершённой несовместимой миграции деплой делает roll-forward на новый проверенный backend, даже если frontend/Nginx-проверка не прошла;
-- перед несовместимой миграцией API переходит в явный persistent maintenance mode и отвечает `503` с `DEPLOYMENT_MAINTENANCE`; старый upload-cleanup cron останавливается под тем же lock, который использует media cleanup;
-- после завершённой миграции запускается только совместимый новый backend, а если переход прервался, maintenance сохраняется после выхода deploy-процесса и перезагрузки сервера. Старый backend не может раскрыть черновики или удалить snapshot media.
+- before migrations begin, the old backend remains unchanged;
+- after a compatible migration, only a release with the same schema marker can be restored;
+- after a completed incompatible migration, the deployment rolls forward to the new verified backend, even if the frontend/Nginx check did not pass;
+- before an incompatible migration, the API enters an explicit persistent maintenance mode and responds with `503` and `DEPLOYMENT_MAINTENANCE`; the old upload-cleanup cron is stopped under the same lock used by media cleanup;
+- after a completed migration, only the compatible new backend is started, and if the transition was interrupted, maintenance mode is preserved after the deploy process exits and after a server reboot. The old backend cannot expose drafts or delete snapshot media.
 
-`deploy/backend-schema-compatibility` консервативно привязан к имени последней Prisma migration и меняется при каждой новой миграции; CI проверяет это правило. Поэтому совместимость никогда не предполагается автоматически, даже для миграции, которая выглядит additive. Нельзя присваивать старому релизу новый marker вручную.
+`deploy/backend-schema-compatibility` is conservatively tied to the name of the latest Prisma migration and changes with every new migration; CI enforces this rule. Therefore compatibility is never assumed automatically, even for a migration that looks additive. You must not manually assign a new marker to an old release.
 
-Состояние безопасного восстановления на сервере:
+Safe-recovery state on the server:
 
 ```bash
 cat /var/lib/intitrade-deploy/schema-compatibility
@@ -145,19 +145,19 @@ cat /var/www/university-marketplace/backend/runtime-current/.schema-compatibilit
 systemctl status intitrade-api.service intitrade-maintenance.service --no-pager
 ```
 
-Для выхода из maintenance повторно запустите обычный deploy релиза с marker, указанным в `schema-compatibility.pending`. Скрипт повторно и идемпотентно проверит миграции, запустит совместимый backend и только после readiness уберёт maintenance marker. `build-backend-release.sh` требует `BACKEND_REQUIRED_SCHEMA_COMPATIBILITY` для activation/rollback и откажется переключать несовместимый runtime; `ExecStartPre` в systemd независимо повторяет проверку marker и блокирует запуск при pending migration. Raw-переключение symlink запрещено. Frontend rollback не меняет это правило.
+To exit maintenance mode, re-run the normal release deploy with the marker specified in `schema-compatibility.pending`. The script re-checks the migrations idempotently, starts the compatible backend, and only removes the maintenance marker after readiness. `build-backend-release.sh` requires `BACKEND_REQUIRED_SCHEMA_COMPATIBILITY` for activation/rollback and refuses to switch to an incompatible runtime; `ExecStartPre` in systemd independently repeats the marker check and blocks startup if there is a pending migration. Raw symlink switching is forbidden. A frontend rollback does not change this rule.
 
 ## Backup
 
-`deploy/backup-intitrade.sh` создаёт PostgreSQL dump и архив uploads, проверяет их чтение и сохраняет SHA-256 checksums. По умолчанию локальные копии хранятся 14 дней в `/var/backups/intitrade`.
+`deploy/backup-intitrade.sh` creates a PostgreSQL dump and an archive of uploads, verifies that they can be read, and stores SHA-256 checksums. By default, local copies are kept for 14 days in `/var/backups/intitrade`.
 
-Для второй проверенной копии на отдельном смонтированном хранилище задайте `OFFSITE_BACKUP_DIR` при запуске скрипта или в cron-конфигурации. Каталог на том же диске не считается offsite backup.
+For a second verified copy on a separate mounted storage, set `OFFSITE_BACKUP_DIR` when running the script or in the cron configuration. A directory on the same disk is not considered an offsite backup.
 
-## Безопасность конфигурации
+## Configuration security
 
-- Никогда не добавляйте `.env`, SSH private keys, пароли или дампы БД в Git.
-- После утечки credential сначала замените его в рабочей системе, затем согласованно очистите Git history.
-- Production `JWT_SECRET` должен быть уникальным и содержать не менее 32 символов.
-- Production-регистрация требует демонстрационный код с экрана. Реальную отправку писем можно включить позже через `EMAIL_VERIFICATION_DELIVERY=email` после настройки SMTP.
+- Never add `.env`, SSH private keys, passwords, or DB dumps to Git.
+- After a credential leak, first replace it in the running system, then clean up the Git history consistently.
+- The production `JWT_SECRET` must be unique and at least 32 characters long.
+- Production registration requires a demo code shown on screen. Real email delivery can be enabled later via `EMAIL_VERIFICATION_DELIVERY=email` after configuring SMTP.
 
-Репозиторий: https://github.com/beisheevaaa1/IntiTrade
+Repository: https://github.com/beisheevaaa1/IntiTrade

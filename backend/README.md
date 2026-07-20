@@ -2,15 +2,15 @@
 
 > Node.js + Express + TypeScript + Prisma + PostgreSQL + Socket.io
 
-## Быстрый старт
+## Quick start
 
 ```bash
 npm install
 cp .env.example .env
-# Настрой DATABASE_URL в .env на свою PostgreSQL
+# Set DATABASE_URL in .env to your PostgreSQL
 npx prisma generate
 npx prisma migrate dev
-npm run seed      # Загрузить демо-данные
+npm run seed      # Load demo data
 npm run dev       # http://localhost:4000
 ```
 

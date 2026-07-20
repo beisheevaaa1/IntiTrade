@@ -391,7 +391,7 @@ export function CreateListing() {
                 <span>💡</span> Boost Your Course Sales!
               </h4>
               <p className="text-xs text-amber-800 leading-relaxed max-w-xl">
-                Сделайте ваш академический профиль (GPA и успеваемость) публичным. Это подтвердит вашу экспертизу перед студентами, повысит доверие к вашим курсам и увеличит продажи!
+                Make your academic profile (GPA and academic performance) public. It will demonstrate your expertise to students, increase trust in your courses, and boost your sales!
               </p>
             </div>
             <div className="flex gap-2 shrink-0 w-full sm:w-auto justify-end">
