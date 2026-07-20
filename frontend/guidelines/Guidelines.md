@@ -1,61 +1,76 @@
-**Add your own guidelines here**
-<!--
+# IntiTrade — Frontend Guidelines
 
-System Guidelines
+Rules for working on the IntiTrade frontend (React + Vite + TypeScript +
+Tailwind CSS v4 + Radix UI). Keep changes consistent with these conventions.
 
-Use this file to provide the AI with rules and guidelines you want it to follow.
-This template outlines a few examples of things you can add. You can add your own sections and format it to suit your needs
+## General
 
-TIP: More context isn't always better. It can confuse the LLM. Try and add the most important rules you need
+- Language is **TypeScript**. Type props and API responses; avoid `any`.
+- Prefer responsive layouts with **flexbox and grid**. Use absolute positioning
+  only when necessary.
+- Keep files small. Put reusable components, hooks, and helpers in their own
+  files under the correct folder (see structure below).
+- Refactor as you go; don't leave dead code or commented-out blocks.
+- Run `npm run typecheck` and `npm run build` before considering work done.
 
-# General guidelines
+## Project structure
 
-Any general rules you want the AI to follow.
-For example:
+```
+src/api/        Centralized API layer (axios client, config, response types)
+src/app/        App shell, routes, pages, and components
+  app/pages/       One file per screen (Home, BrowseListings, Inbox, ...)
+  app/components/  Shared components; components/ui = Radix design system
+src/state/      React context providers (AuthContext, ToastContext)
+src/lib/        Cross-cutting helpers (telemetry, utils)
+src/utils/      Formatting, error helpers, markdown rendering
+src/styles/     Tailwind and theme CSS
+src/types.ts    Shared TypeScript types
+```
 
-* Only use absolute positioning when necessary. Opt for responsive and well structured layouts that use flexbox and grid by default
-* Refactor code as you go to keep code clean
-* Keep file sizes small and put helper functions and components in their own files.
+New screens go in `src/app/pages/` and are registered in
+`src/app/routes.tsx`. Shared UI goes in `src/app/components/`.
 
---------------
+## Calling the API
 
-# Design system guidelines
-Rules for how the AI should make generations look like your company's design system
+- **Always** use the shared axios instance from `src/api/client.ts`
+  (`import { api } from "../api/client"`). Never call `axios` or `fetch`
+  directly — the shared client sets `baseURL`, `withCredentials: true`, and the
+  error/telemetry interceptor.
+- For image/upload URLs use the `mediaUrl()` helper from `client.ts`; don't
+  hand-build server URLs.
+- API response shapes live in `src/api/responses.ts`. Reuse those types instead
+  of redefining them.
+- Do not hardcode the API origin. `src/api/config.ts` handles it: production
+  uses the page origin (first-party cookies); development uses `VITE_API_URL`
+  or `http://localhost:4000`.
 
-Additionally, if you select a design system to use in the prompt box, you can reference
-your design system's components, tokens, variables and components.
-For example:
+## Authentication (important)
 
-* Use a base font-size of 14px
-* Date formats should always be in the format “Jun 10”
-* The bottom toolbar should only ever have a maximum of 4 items
-* Never use the floating action button with the bottom toolbar
-* Chips should always come in sets of 3 or more
-* Don't use a dropdown if there are 2 or fewer options
+- Auth state comes from `src/state/AuthContext.tsx`. Read the user from that
+  context; don't fetch `/auth/me` ad hoc in components.
+- The session is a server-set **HttpOnly cookie**. **Never** store the JWT or
+  any auth token in `localStorage` or `sessionStorage` — this is a security
+  rule, not a preference. The cookie travels automatically because the client
+  uses `withCredentials`.
+- Gate protected pages on the auth context's user/loading state.
 
-You can also create sub sections and add more specific details
-For example:
+## UI and design system
 
+- Build on the existing Radix-based components in `src/app/components/ui`
+  before introducing a new library or custom widget.
+- Style with **Tailwind utility classes** and the theme tokens in
+  `src/styles/theme.css`. Don't add inline color hex values that bypass the
+  theme.
+- Icons come from `lucide-react`. Toasts go through `ToastContext`
+  (built on `sonner`) — don't create separate notification systems.
+- Keep labels action-oriented and text in **English** (the app is
+  English-facing).
 
-## Button
-The Button component is a fundamental interactive element in our design system, designed to trigger actions or navigate
-users through the application. It provides visual feedback and clear affordances to enhance user experience.
+## Do / Don't
 
-### Usage
-Buttons should be used for important actions that users need to take, such as form submissions, confirming choices,
-or initiating processes. They communicate interactivity and should have clear, action-oriented labels.
-
-### Variants
-* Primary Button
-  * Purpose : Used for the main action in a section or page
-  * Visual Style : Bold, filled with the primary brand color
-  * Usage : One primary button per section to guide users toward the most important action
-* Secondary Button
-  * Purpose : Used for alternative or supporting actions
-  * Visual Style : Outlined with the primary color, transparent background
-  * Usage : Can appear alongside a primary button for less important actions
-* Tertiary Button
-  * Purpose : Used for the least important actions
-  * Visual Style : Text-only with no border, using primary color
-  * Usage : For actions that should be available but not emphasized
--->
+- Do keep components presentational where possible and push data logic to the
+  API layer or context.
+- Do handle loading and error states for every network call.
+- Don't commit `.env` files or secrets.
+- Don't introduce new heavy dependencies without a clear need — the initial
+  JS bundle size is checked in CI.
